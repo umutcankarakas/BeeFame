@@ -8,7 +8,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 # 4. Install the Python dependencies.
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PIP_DEFAULT_TIMEOUT=300 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_RETRIES=10
+RUN pip install --no-cache-dir --retries 10 --timeout 300 -r requirements.txt
 
 # 5. Copy the rest of your application code and, crucially, the pre-trained models.
 # This includes main.py and the 'model_cache' folder.
