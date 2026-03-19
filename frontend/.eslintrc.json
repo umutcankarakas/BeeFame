@@ -1,0 +1,16 @@
+{
+  "extends": ["next/core-web-vitals", "prettier"],
+  "rules": {
+    "@next/next/no-img-element": "off",
+    "@next/next/no-page-custom-font": "off",
+    "react/jsx-max-props-per-line": [
+      "error",
+      {
+        "maximum": 1
+      }
+    ],
+    "import/newline-after-import": "error",
+    "jsx-a11y/alt-text": "off",
+    "no-unused-vars": "off"
+  }
+}

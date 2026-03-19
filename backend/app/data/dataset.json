@@ -1,0 +1,47 @@
+[
+  {
+    "id": 1,
+    "name": "Statlog (German Credit Data)",
+    "slug": "german",
+    "url": "https://archive.ics.uci.edu/dataset/144/statlog+german+credit+data",
+    "instances": 1000,
+    "description": "This dataset classifies people described by a set of attributes as good or bad credit risks. Comes in two formats (one all numeric). Also comes with a cost matrix.",
+    "sensitive_features": [
+      {
+        "name": "Age",
+        "unprivileged": "Young",
+        "privileged": "Old"
+      },
+      {
+        "name": "Gender",
+        "unprivileged": "Female",
+        "privileged": "Male"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Census Income",
+    "slug": "adult",
+    "url": "https://archive.ics.uci.edu/dataset/20/census+income",
+    "instances": 48842,
+    "description": "Predict whether income exceeds $50K/yr based on census data. Also known as Adult dataset.",
+    "sensitive_features": [
+      {
+        "name": "Age",
+        "unprivileged": "Young",
+        "privileged": "Old"
+      },
+      {
+        "name": "Race",
+        "unprivileged": "Non-white",
+        "privileged": "White"
+      },
+      {
+        "name": "Gender",
+        "unprivileged": "Female",
+        "privileged": "Male"
+      }
+    ]
+  }
+]

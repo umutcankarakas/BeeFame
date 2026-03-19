@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app
+    env_file:
+      - .env
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers
+
+  cli:
+    build:
+      context: .
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./app:/app
+  
+  redis:
+    image: redis:7-alpine

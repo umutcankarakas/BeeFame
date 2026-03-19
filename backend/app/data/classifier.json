@@ -1,0 +1,48 @@
+[
+  {
+    "id": 1,
+    "name": "XGBClassifier",
+    "url": "https://xgboost.readthedocs.io/en/stable/get_started.html",
+    "params": [
+      { "title": "n_estimators", "type": "int", "default": 100 },
+      { "title": "max_depth", "type": "int", "default": 3 },
+      { "title": "learning_rate", "type": "float", "default": 0.1 },
+      { "title": "subsample", "type": "float", "default": 1.0 },
+      { "title": "colsample_bytree", "type": "float", "default": 1.0 }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Support Vector Classification (SVC)",
+    "url": "https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html",
+    "params": [
+      { "title": "C", "type": "float", "default": 1.0 },
+      { "title": "kernel", "type": "str", "default": "rbf" },
+      { "title": "gamma", "type": "str", "default": "scale" },
+      { "title": "degree", "type": "int", "default": 3 }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "Random Forest Classifier",
+    "url": "https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html",
+    "params": [
+      { "title": "n_estimators", "type": "int", "default": 100 },
+      { "title": "max_depth", "type": "int", "default": 3 },
+      { "title": "min_samples_split", "type": "int", "default": 2 },
+      { "title": "min_samples_leaf", "type": "int", "default": 1 },
+      { "title": "max_features", "type": "str", "default": "sqrt" }
+    ]
+  },
+  {
+    "id": 4,
+    "name": "Logistic Regression",
+    "url": "https://scikit-learn.org/1.5/modules/generated/sklearn.linear_model.LogisticRegression.html",
+    "params": [
+      { "title": "penalty", "type": "str", "default": "l2" },
+      { "title": "solver", "type": "str", "default": "lbfgs" },
+      { "title": "max_iter", "type": "int", "default": 1000 },
+      { "title": "C", "type": "float", "default": 1.0 }
+    ]
+  }
+]

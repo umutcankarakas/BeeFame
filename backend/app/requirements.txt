@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pydantic
+fairlearn
+ucimlrepo
+python-dotenv
+fairgbm
+lightgbm
+xgboost
+themis-ml
+aif360
+aequitas
+redis

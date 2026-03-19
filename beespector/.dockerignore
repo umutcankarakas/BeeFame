@@ -1,0 +1,8 @@
+# Ignore the Python virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.idea/
+.vscode/
