@@ -143,8 +143,7 @@ export const HomeFaqs: FC = () => {
                 color="text.secondary"
                 variant="body1"
               >
-                Can't find the answer you're looking for? Feel free to explore the demo and see how
-                the tool works in practice.
+                {'Can\'t find the answer you\'re looking for? Feel free to explore the demo and see how the tool works in practice.'}
               </Typography>
             </Stack>
           </Grid>
