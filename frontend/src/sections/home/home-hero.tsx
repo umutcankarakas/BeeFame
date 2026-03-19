@@ -52,7 +52,7 @@ export const HomeHero: FC = () => {
                 Audit bias, apply mitigation strategies, and compare fairness metrics — in minutes.
               </Typography>
               <Button
-                component={NextLink}
+                LinkComponent={NextLink}
                 href="/demo"
                 variant="contained"
                 size="large"

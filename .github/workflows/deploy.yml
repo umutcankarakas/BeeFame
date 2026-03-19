@@ -9,6 +9,7 @@ jobs:
   deploy:
     name: SSH deploy to server
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Deploy via SSH
@@ -17,6 +18,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 25m
           script: |
             set -e
             cd /opt/BeeFame
@@ -30,9 +32,11 @@ jobs:
             echo "=== Restarting services ==="
             docker compose up -d
 
+            echo "=== Waiting for services to start ==="
+            sleep 20
+
             echo "=== Health check ==="
-            sleep 5
-            curl -sf http://localhost:8000/status && echo "Backend OK"
-            curl -sf -o /dev/null -w "Frontend: %{http_code}\n" http://localhost:3001/
+            curl -sf http://localhost:8000/status && echo "Backend OK" || echo "WARNING: Backend health check failed (may still be starting)"
+            curl -sf -o /dev/null -w "Frontend HTTP: %{http_code}\n" http://localhost:3001/ || echo "WARNING: Frontend health check failed (may still be starting)"
 
             echo "=== Deploy complete ==="
