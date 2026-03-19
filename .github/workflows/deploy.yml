@@ -20,14 +20,19 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           command_timeout: 25m
           script: |
-            set -e
             cd /opt/BeeFame
 
             echo "=== Pulling latest code ==="
             git pull origin main
 
             echo "=== Rebuilding changed images ==="
-            docker compose build
+            docker compose build 2>&1 | tee /tmp/build.log
+            BUILD_EXIT=${PIPESTATUS[0]}
+            if [ $BUILD_EXIT -ne 0 ]; then
+              echo "=== BUILD FAILED (exit $BUILD_EXIT) — last 50 lines ==="
+              tail -50 /tmp/build.log
+              exit $BUILD_EXIT
+            fi
 
             echo "=== Restarting services ==="
             docker compose up -d
@@ -36,7 +41,7 @@ jobs:
             sleep 20
 
             echo "=== Health check ==="
-            curl -sf http://localhost:8000/status && echo "Backend OK" || echo "WARNING: Backend health check failed (may still be starting)"
-            curl -sf -o /dev/null -w "Frontend HTTP: %{http_code}\n" http://localhost:3001/ || echo "WARNING: Frontend health check failed (may still be starting)"
+            curl -sf http://localhost:8000/status && echo "Backend OK" || echo "WARNING: Backend not ready yet"
+            curl -sf -o /dev/null -w "Frontend HTTP: %{http_code}\n" http://localhost:3001/ || echo "WARNING: Frontend not ready yet"
 
             echo "=== Deploy complete ==="
