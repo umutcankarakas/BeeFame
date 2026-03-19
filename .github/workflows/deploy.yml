@@ -1,0 +1,38 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: SSH deploy to server
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/BeeFame
+
+            echo "=== Pulling latest code ==="
+            git pull origin main
+
+            echo "=== Rebuilding changed images ==="
+            docker compose build
+
+            echo "=== Restarting services ==="
+            docker compose up -d
+
+            echo "=== Health check ==="
+            sleep 5
+            curl -sf http://localhost:8000/status && echo "Backend OK"
+            curl -sf -o /dev/null -w "Frontend: %{http_code}\n" http://localhost:3001/
+
+            echo "=== Deploy complete ==="
