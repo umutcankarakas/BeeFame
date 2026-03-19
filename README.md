@@ -1,6 +1,8 @@
-# BeeFame
+# BeeFAME
 
 **Fairness Analysis, Mitigation and Explainability** platform for ML models.
+
+BeeFAME walks you through a four-step wizard to audit and reduce bias in ML classifiers. Pick a dataset, pick a classifier, apply a mitigation strategy, then compare fairness metrics before and after — side by side. For deeper inspection, **Beespector** lets you explore individual predictions and partial dependence plots.
 
 ## Services
 
@@ -34,6 +36,27 @@ To stop everything:
 ```bash
 docker compose down
 ```
+
+## Demo Walkthrough
+
+1. **Select Dataset & Classifier** — choose German Credit Data or Census Income, then pick a classifier (Random Forest, XGBoost, SVC, or Logistic Regression).
+2. **Check Bias Metrics** — radar charts display five fairness metrics per sensitive attribute (Age, Gender, Race) before any mitigation.
+3. **Select Mitigation** — choose a preprocessing strategy: Relabeller, Prevalence Sampling, or Data Repairer.
+4. **Review Results** — compare original vs. mitigated metrics side-by-side. Hit **Deep Dive with Beespector** to inspect individual predictions.
+
+> Results for default parameters are served from Redis cache for speed. Custom parameters trigger fresh computation (may take a few minutes depending on the dataset).
+
+## Fairness Metrics
+
+All metrics are displayed as `1 - m` (or `m` for Disparate Impact), so **higher = fairer**:
+
+| Metric | Ideal |
+|--------|-------|
+| Statistical Parity Difference (1-m) | 1.0 |
+| Equal Opportunity Difference (1-m) | 1.0 |
+| Average Odds Difference (1-m) | 1.0 |
+| Disparate Impact (m) | 1.0 |
+| Theil Index (1-m) | 1.0 |
 
 ## API Docs
 
@@ -85,8 +108,9 @@ BeeFame/
 
 ### Backend
 ```bash
-cd backend/app
+cd backend
 pip install -r requirements.txt
+cd app
 uvicorn main:app --reload --port 8000
 ```
 Requires Redis running locally on port 6379.
