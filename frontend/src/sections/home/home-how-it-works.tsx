@@ -5,9 +5,9 @@ import CardContent from '@mui/material/CardContent';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import Grid from '@mui/system/Unstable_Grid';
-import SettingsIcon from '@mui/icons-material/TuneRounded';
-import RadarIcon from '@mui/icons-material/RadarRounded';
-import CompareArrowsIcon from '@mui/icons-material/CompareArrowsRounded';
+import SettingsIcon from '@mui/icons-material/SettingsRounded';
+import AssessmentIcon from '@mui/icons-material/AssessmentRounded';
+import CompareArrowsIcon from '@mui/icons-material/SwapHorizRounded';
 
 const steps = [
   {
@@ -19,7 +19,7 @@ const steps = [
   },
   {
     number: '02',
-    icon: <RadarIcon sx={{ fontSize: 36, color: 'primary.main' }} />,
+    icon: <AssessmentIcon sx={{ fontSize: 36, color: 'primary.main' }} />,
     title: 'Inspect Bias',
     description:
       'Radar charts display five fairness metrics across sensitive attributes (Age, Gender, Race) before any intervention, giving you a clear picture of where bias lives.',
