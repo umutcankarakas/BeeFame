@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Box, Container, Paper, Typography, CircularProgress, Alert, Button } from '@mui/material';
+import { Box, Chip, Container, Paper, Stack, Typography, CircularProgress, Alert, Button } from '@mui/material';
 import { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { Layout as MarketingLayout } from 'src/layouts/marketing';
@@ -13,6 +13,13 @@ import PartialDependencies from 'src/components/beespector/PartialDependencies';
 import PerformanceFairness from 'src/components/beespector/PerformanceFairness';
 
 import { beespectorApi } from 'src/lib/beespectorAxios';
+
+const chipSx = {
+  borderColor: 'primary.main',
+  color: 'primary.main',
+  fontWeight: 600,
+  textTransform: 'capitalize' as const,
+};
 
 const BeespectorPage: NextPage = () => {
   const router = useRouter();
@@ -129,9 +136,9 @@ const BeespectorPage: NextPage = () => {
     return (
       <>
         {activeTab === 'datapoint' && <DatapointEditor />}
-        {/*activeTab === 'partial' && <PartialDependencies />*/}
-        {/*activeTab === 'performance' && <PerformanceFairness />*/}
-        {/*activeTab === 'features' && <FeaturesPage />*/}
+        {activeTab === 'partial' && <PartialDependencies />}
+        {activeTab === 'performance' && <PerformanceFairness />}
+        {activeTab === 'features' && <FeaturesPage />}
       </>
     );
   };
@@ -147,60 +154,66 @@ const BeespectorPage: NextPage = () => {
         }}
       >
         <Container maxWidth="xl">
-          <Box sx={{ mb: 3 }}>
-            <Typography
-              variant="h3"
-              gutterBottom
-            >
-              Beespector Deep Dive
-            </Typography>
-            {contextInfo ? (
-              <Box
-                sx={{
-                  display: 'flex',
-                  gap: 2,
-                  flexWrap: 'wrap',
-                  mb: 2,
-                  textTransform: 'capitalize',
-                }}
+          {/* Header row: title + back button */}
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              mb: 2,
+            }}
+          >
+            <Box>
+              <Typography
+                variant="h3"
+                gutterBottom
               >
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
+                Beespector Deep Dive
+              </Typography>
+              {contextInfo && (
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  flexWrap="wrap"
+                  sx={{ mt: 1 }}
                 >
-                  Dataset: <strong>{contextInfo.dataset}</strong>
-                </Typography>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  Base Model: <strong>{contextInfo.base_classifier.replace(/_/g, ' ')}</strong>
-                </Typography>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  Mitigation: <strong>{contextInfo.mitigation_method.replace(/_/g, ' ')}</strong>
-                </Typography>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  Samples: <strong>{contextInfo.n_samples}</strong>
-                </Typography>
-              </Box>
-            ) : (
-              !isInitializing && !initError && <Box sx={{ height: '20px', mb: 2 }} />
-            )}
+                  <Chip
+                    label={`Dataset: ${contextInfo.dataset}`}
+                    variant="outlined"
+                    size="small"
+                    sx={chipSx}
+                  />
+                  <Chip
+                    label={`Model: ${contextInfo.base_classifier.replace(/_/g, ' ')}`}
+                    variant="outlined"
+                    size="small"
+                    sx={chipSx}
+                  />
+                  <Chip
+                    label={`Mitigation: ${contextInfo.mitigation_method.replace(/_/g, ' ')}`}
+                    variant="outlined"
+                    size="small"
+                    sx={chipSx}
+                  />
+                  <Chip
+                    label={`Samples: ${contextInfo.n_samples}`}
+                    variant="outlined"
+                    size="small"
+                    sx={chipSx}
+                  />
+                </Stack>
+              )}
+            </Box>
             <Button
               variant="outlined"
               size="small"
               onClick={() => router.push('/demo')}
-              sx={{ mb: 2 }}
+              sx={{ mt: 1, whiteSpace: 'nowrap' }}
             >
               ← Back to Analysis
             </Button>
           </Box>
+
           <BeespectorNavbar
             activeTab={activeTab}
             onChangeTab={setActiveTab}

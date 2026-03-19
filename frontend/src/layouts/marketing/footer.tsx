@@ -48,7 +48,7 @@ export const Footer = () => {
           </Stack>
 
           <Link
-            href="https://github.com/furkantopal/bee-fair"
+            href="https://github.com/umutcankarakas/BeeFame"
             target="_blank"
             rel="noopener noreferrer"
             color="inherit"

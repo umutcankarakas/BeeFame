@@ -32,8 +32,8 @@ const items: Item[] = [
     path: '/#features',
   },
   {
-    title: 'Teams',
-    path: '/#teams',
+    title: 'How it Works',
+    path: '/#how-it-works',
   },
   {
     title: 'FAQ',
@@ -167,7 +167,7 @@ export const TopNav: FC<TopNavProps> = (props) => {
               href="/demo"
               variant="contained"
             >
-              Demo
+              Try the Demo
             </Button>
             {!mdUp && (
               <IconButton onClick={onMobileNavOpen}>

@@ -7,6 +7,7 @@ import Box from '@mui/material/Box';
 import Collapse from '@mui/material/Collapse';
 import Container from '@mui/material/Container';
 import Grid from '@mui/material/Unstable_Grid2';
+import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import SvgIcon from '@mui/material/SvgIcon';
 import Typography from '@mui/material/Typography';
@@ -54,10 +55,21 @@ const Faq: FC<FaqProps> = (props) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
   return (
-    <Stack
+    <Paper
       onClick={() => setIsExpanded((prevState) => !prevState)}
-      spacing={2}
-      sx={{ cursor: 'pointer', background: 'white', p: 2, borderRadius: 1 }}
+      elevation={0}
+      sx={{
+        cursor: 'pointer',
+        border: '1px solid',
+        borderColor: isExpanded ? 'primary.main' : 'divider',
+        borderRadius: 2,
+        p: 2.5,
+        transition: 'border-color 0.2s, box-shadow 0.2s',
+        '&:hover': {
+          boxShadow: 2,
+          borderColor: 'primary.light',
+        },
+      }}
     >
       <Stack
         alignItems="center"
@@ -65,18 +77,33 @@ const Faq: FC<FaqProps> = (props) => {
         justifyContent="space-between"
         spacing={2}
       >
-        <Typography variant="subtitle1">{question}</Typography>
-        <SvgIcon>{isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}</SvgIcon>
+        <Typography
+          variant="subtitle1"
+          sx={{ fontWeight: 600 }}
+        >
+          {question}
+        </Typography>
+        <SvgIcon
+          sx={{
+            color: 'primary.main',
+            flexShrink: 0,
+            transition: 'transform 0.2s',
+            transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+          }}
+        >
+          <ChevronDownIcon />
+        </SvgIcon>
       </Stack>
       <Collapse in={isExpanded}>
         <Typography
           color="text.secondary"
           variant="body2"
+          sx={{ mt: 1.5, lineHeight: 1.7 }}
         >
           {answer}
         </Typography>
       </Collapse>
-    </Stack>
+    </Paper>
   );
 };
 
@@ -89,7 +116,7 @@ export const HomeFaqs: FC = () => {
   return (
     <Box
       id="faq"
-      sx={{ py: '120px', background: '#f5f5f5' }}
+      sx={{ py: '120px', backgroundColor: 'background.default' }}
     >
       <Container maxWidth="lg">
         <Grid
@@ -98,23 +125,34 @@ export const HomeFaqs: FC = () => {
         >
           <Grid
             xs={12}
-            md={6}
+            md={5}
           >
-            <Stack spacing={2}>
+            <Stack
+              spacing={2}
+              sx={{ position: 'sticky', top: 100 }}
+            >
+              <Typography
+                variant="overline"
+                color="primary.main"
+                sx={{ fontWeight: 700, letterSpacing: 2 }}
+              >
+                FAQ
+              </Typography>
               <Typography variant="h3">Everything you need to know</Typography>
               <Typography
                 color="text.secondary"
-                variant="subtitle2"
+                variant="body1"
               >
-                Frequently asked questions
+                Can't find the answer you're looking for? Feel free to explore the demo and see how
+                the tool works in practice.
               </Typography>
             </Stack>
           </Grid>
           <Grid
             xs={12}
-            md={6}
+            md={7}
           >
-            <Stack spacing={4}>
+            <Stack spacing={2}>
               {faqs.map((faq, index) => (
                 <Faq
                   key={index}

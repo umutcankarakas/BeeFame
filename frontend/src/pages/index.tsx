@@ -6,7 +6,7 @@ import { Layout as MarketingLayout } from 'src/layouts/marketing';
 import { HomeFaqs } from 'src/sections/home/home-faqs';
 import { HomeFeatures } from 'src/sections/home/home-features';
 import { HomeHero } from 'src/sections/home/home-hero';
-import { HomeTeam } from 'src/sections/home/home-team';
+import { HomeHowItWorks } from 'src/sections/home/home-how-it-works';
 
 const Page: NextPage = () => {
   return (
@@ -15,8 +15,7 @@ const Page: NextPage = () => {
       <main>
         <HomeHero />
         <HomeFeatures />
-        <HomeTeam />
-
+        <HomeHowItWorks />
         <HomeFaqs />
       </main>
     </>

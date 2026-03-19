@@ -1,8 +1,9 @@
 import type { FC } from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
-import { useTheme } from '@mui/material/styles';
+import NextLink from 'next/link';
 
 import Grid from '@mui/system/Unstable_Grid';
 
@@ -22,7 +23,10 @@ export const HomeHero: FC = () => {
           alignItems="center"
           spacing={2}
         >
-          <Grid md={6}>
+          <Grid
+            xs={12}
+            md={6}
+          >
             <Box maxWidth="sm">
               <Typography
                 variant="h1"
@@ -42,14 +46,26 @@ export const HomeHero: FC = () => {
                 sx={{
                   fontSize: 20,
                   fontWeight: 500,
+                  mb: 4,
                 }}
               >
-                Easily test and visualize the fairness of your AI models to ensure ethical and
-                unbiased decision-making
+                Audit bias, apply mitigation strategies, and compare fairness metrics — in minutes.
               </Typography>
+              <Button
+                component={NextLink}
+                href="/demo"
+                variant="contained"
+                size="large"
+                sx={{ fontWeight: 600, px: 4, py: 1.5 }}
+              >
+                Try the Demo
+              </Button>
             </Box>
           </Grid>
-          <Grid md={6}>
+          <Grid
+            xs={12}
+            md={6}
+          >
             <Box
               sx={{
                 pt: '120px',
@@ -57,7 +73,10 @@ export const HomeHero: FC = () => {
                 mb: '-7px',
               }}
             >
-              <img src="/hero.svg" />
+              <img
+                src="/hero.svg"
+                style={{ width: '100%' }}
+              />
             </Box>
           </Grid>
         </Grid>
