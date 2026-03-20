@@ -10,4 +10,5 @@ xgboost
 themis-ml
 aif360
 aequitas
+hpt
 redis>=4.0.0,<5.0.0
