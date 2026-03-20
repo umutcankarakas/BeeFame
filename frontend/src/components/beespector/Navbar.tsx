@@ -8,10 +8,10 @@ type NavbarProps = {
 
 function BeespectorNavbar({ activeTab, onChangeTab }: NavbarProps) {
   const tabs = [
-    { id: 'datapoint', label: 'Datapoint Editor' },
-    { id: 'partial', label: 'Partial Dependence' },
+    { id: 'features', label: 'Dataset Overview' },
     { id: 'performance', label: 'Performance & Fairness' },
-    { id: 'features', label: 'Features' },
+    { id: 'partial', label: 'Partial Dependence' },
+    { id: 'datapoint', label: 'Datapoint Editor' },
   ];
 
   const handleChange = (event: React.SyntheticEvent, newValue: string) => {

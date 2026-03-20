@@ -519,9 +519,39 @@ async def evaluate_modified_point(point_id: int, payload: Dict[str, Any]):
         mitigated_model_prediction={"pred_label": int(mit_labels[0]), "pred_prob": float(mit_probs[0])}
     )
 
+@app.get("/api/features/{dataset_name}")
+async def get_dataset_features(dataset_name: str):
+    """Return feature stats for a dataset without requiring context initialization."""
+    try:
+        df = load_dataset(dataset_name)
+        categorical, numerical = get_feature_types(df)
+        features_list = []
+        for col in numerical:
+            if col not in df.columns:
+                continue
+            series = df[col].dropna().astype(float)
+            if len(series) == 0:
+                continue
+            hist, bins = np.histogram(series, bins=10)
+            histogram = [{"bin": f"{bins[i]:.1f}-{bins[i+1]:.1f}", "value": int(hist[i])} for i in range(len(hist))]
+            features_list.append({
+                "featureName": col,
+                "count": int(series.count()),
+                "missing": int(df[col].isna().sum()),
+                "mean": float(np.nan_to_num(series.mean())),
+                "min": float(np.nan_to_num(series.min())),
+                "max": float(np.nan_to_num(series.max())),
+                "median": float(np.nan_to_num(series.median())),
+                "std": float(np.nan_to_num(series.std())),
+                "histogram": histogram
+            })
+        return {"features": features_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/features")
 async def get_features():
-    if not context.is_initialized: 
+    if not context.is_initialized:
         raise HTTPException(status_code=400, detail="Context not initialized.")
     
     features_list = []
@@ -579,19 +609,52 @@ async def get_performance_fairness():
             tpr_g1, tpr_g2 = base_labels[(g1_mask) & (y_true == 1)].mean(), base_labels[(g2_mask) & (y_true == 1)].mean()
             eq_opp = tpr_g1 - tpr_g2
 
+    # --- Mitigated model metrics ---
+    mit_labels = context.mitigated_model.predict(context.X_test)
+    mit_probs = context.mitigated_model.predict_proba(context.X_test)[:, 1]
+    mit_fpr, mit_tpr, _ = roc_curve(y_true, mit_probs)
+    mit_precision, mit_recall, _ = precision_recall_curve(y_true, mit_probs)
+    mit_cm = confusion_matrix(y_true, mit_labels)
+
+    mit_stat_parity, mit_disparate_impact, mit_eq_opp = 0.0, 1.0, 0.0
+    if sensitive_col_name and sensitive_col_name in context.X_test.columns:
+        sensitive_col = context.X_test[sensitive_col_name]
+        groups = sensitive_col.dropna().unique()
+        if len(groups) >= 2:
+            g1_mask, g2_mask = (sensitive_col == groups[0]), (sensitive_col == groups[1])
+            mp_g1, mp_g2 = mit_labels[g1_mask].mean(), mit_labels[g2_mask].mean()
+            mit_stat_parity = mp_g1 - mp_g2
+            mit_disparate_impact = mp_g1 / (mp_g2 + 1e-6)
+            mtpr_g1 = mit_labels[(g1_mask) & (y_true == 1)].mean()
+            mtpr_g2 = mit_labels[(g2_mask) & (y_true == 1)].mean()
+            mit_eq_opp = mtpr_g1 - mtpr_g2
+
     return {
         "roc_curve": [{"fpr": f, "tpr": t} for f, t in zip(fpr, tpr)],
         "pr_curve": [{"recall": r, "precision": p} for r, p in zip(recall, precision)],
         "confusion_matrix": {"tn": int(cm[0, 0]), "fp": int(cm[0, 1]), "fn": int(cm[1, 0]), "tp": int(cm[1, 1])},
         "fairness_metrics": {
-            "StatisticalParityDiff": float(np.nan_to_num(stat_parity)), 
-            "DisparateImpact": float(np.nan_to_num(disparate_impact, nan=1.0)), 
+            "StatisticalParityDiff": float(np.nan_to_num(stat_parity)),
+            "DisparateImpact": float(np.nan_to_num(disparate_impact, nan=1.0)),
             "EqualOpportunityDiff": float(np.nan_to_num(eq_opp))
         },
         "performance_metrics": {
-            "Accuracy": float(accuracy_score(y_true, base_labels)), 
-            "F1Score": float(f1_score(y_true, base_labels)), 
+            "Accuracy": float(accuracy_score(y_true, base_labels)),
+            "F1Score": float(f1_score(y_true, base_labels)),
             "AUC": float(roc_auc_score(y_true, base_probs))
+        },
+        "mitigated_roc_curve": [{"fpr": f, "tpr": t} for f, t in zip(mit_fpr, mit_tpr)],
+        "mitigated_pr_curve": [{"recall": r, "precision": p} for r, p in zip(mit_recall, mit_precision)],
+        "mitigated_confusion_matrix": {"tn": int(mit_cm[0, 0]), "fp": int(mit_cm[0, 1]), "fn": int(mit_cm[1, 0]), "tp": int(mit_cm[1, 1])},
+        "mitigated_fairness_metrics": {
+            "StatisticalParityDiff": float(np.nan_to_num(mit_stat_parity)),
+            "DisparateImpact": float(np.nan_to_num(mit_disparate_impact, nan=1.0)),
+            "EqualOpportunityDiff": float(np.nan_to_num(mit_eq_opp))
+        },
+        "mitigated_performance_metrics": {
+            "Accuracy": float(accuracy_score(y_true, mit_labels)),
+            "F1Score": float(f1_score(y_true, mit_labels)),
+            "AUC": float(roc_auc_score(y_true, mit_probs))
         }
     }
 

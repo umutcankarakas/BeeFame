@@ -18,6 +18,9 @@ import {
   FormControl,
   TextField,
   CircularProgress,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import Grid from '@mui/material/Unstable_Grid2';
 import {
@@ -25,6 +28,7 @@ import {
   DatasetOutlined,
   CheckCircleOutline,
   ErrorOutline,
+  ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
 import {
   XAxis,
@@ -49,8 +53,14 @@ import { NextPage } from 'next';
 import { Layout as MarketingLayout } from 'src/layouts/marketing';
 import { Seo } from 'src/components/seo';
 import { api } from 'src/lib/axios';
-import { useRouter } from 'next/router';
 import { useBeeFame } from 'src/contexts/BeeFameContext';
+import BeespectorNavbar from 'src/components/beespector/Navbar';
+import DatapointEditor from 'src/components/beespector/DatapointEditor';
+import FeaturesPage from 'src/components/beespector/FeaturesPage';
+import PartialDependencies from 'src/components/beespector/PartialDependencies';
+import PerformanceFairness from 'src/components/beespector/PerformanceFairness';
+import DatasetFeaturesPreview from 'src/components/beespector/DatasetFeaturesPreview';
+import { beespectorApi } from 'src/lib/beespectorAxios';
 
 interface SensitiveFeature {
   name: string;
@@ -689,7 +699,12 @@ const Page: NextPage = () => {
   }>({});
   const [paramPage, setParamPage] = useState<Record<number, number>>({});
 
-  const router = useRouter(); //router imported and added, find here
+  // Beespector Step 4 state
+  const [beespectorActiveTab, setBeespectorActiveTab] = useState('features');
+  const [isInitializingBeespector, setIsInitializingBeespector] = useState(false);
+  const [beespectorInitError, setBeespectorInitError] = useState<string | null>(null);
+  const [beespectorContextInfo, setBeespectorContextInfo] = useState<any>(null);
+
   const {
     setSelectedDatasets: setContextDatasets,
     setSelectedClassifiers: setContextClassifiers,
@@ -697,6 +712,49 @@ const Page: NextPage = () => {
     setAnalysisData: setContextAnalysisData,
     setClassifierParams: setContextClassifierParams,
   } = useBeeFame();
+
+  // Initialize Beespector context when entering Step 4
+  useEffect(() => {
+    if (activeStep === 4) {
+      setBeespectorActiveTab('features');
+      initializeBeespector();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStep]);
+
+  const initializeBeespector = async () => {
+    if (selectedDatasets.length === 0 || selectedClassifiers.length === 0) return;
+    setIsInitializingBeespector(true);
+    setBeespectorInitError(null);
+    setBeespectorContextInfo(null);
+    try {
+      const dataset = selectedDatasets[0];
+      const classifier = selectedClassifiers[0];
+      const mitigation = selectedMitigations.length > 0 ? selectedMitigations[0] : 'None';
+      const sensitiveFeatureConfig = dataset.sensitive_features[0];
+      let sensitiveFeatureName = sensitiveFeatureConfig.name.toLowerCase();
+      if (sensitiveFeatureName === 'gender') sensitiveFeatureName = 'sex';
+      const classifierSlug = classifier.name
+        .toLowerCase()
+        .replace(/\s+/g, '_')
+        .replace('_(svc)', '')
+        .replace('_classifier', '');
+      const initParams = {
+        dataset_name: dataset.slug,
+        base_classifier: classifierSlug,
+        classifier_params: classifierParams[classifier.id] || {},
+        mitigation_method: mitigation.toLowerCase().replace(/\s+/g, '_'),
+        sensitive_feature: sensitiveFeatureName,
+      };
+      const response = await beespectorApi.post('/initialize_context', initParams);
+      setBeespectorContextInfo(response.data);
+    } catch (error: any) {
+      const msg = error.response?.data?.detail || error.message || 'Unknown error';
+      setBeespectorInitError(msg);
+    } finally {
+      setIsInitializingBeespector(false);
+    }
+  };
 
   console.log('selectedDatasets : ', selectedDatasets);
   useEffect(() => {
@@ -729,6 +787,7 @@ const Page: NextPage = () => {
     'Check Bias Metrics',
     'Select Mitigation',
     'Review Results',
+    'Deep Dive',
   ];
 
   const handleNext = async () => {
@@ -1192,6 +1251,23 @@ const Page: NextPage = () => {
                             </Grid>
                           ))}
                         </Grid>
+
+                        {/* Dataset Feature Preview Accordion */}
+                        {selectedDatasets.length > 0 && (
+                          <Accordion
+                            sx={{ mt: 3, mb: 1, border: '1px solid', borderColor: 'divider', borderRadius: 2, '&:before': { display: 'none' } }}
+                            elevation={0}
+                          >
+                            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                              <Typography sx={{ fontWeight: 600 }}>
+                                Dataset Feature Overview — {selectedDatasets[0].name}
+                              </Typography>
+                            </AccordionSummary>
+                            <AccordionDetails>
+                              <DatasetFeaturesPreview datasetSlug={selectedDatasets[0].slug} />
+                            </AccordionDetails>
+                          </Accordion>
+                        )}
 
                         <Typography
                           variant="h6"
@@ -1803,52 +1879,18 @@ const Page: NextPage = () => {
                     <Alert severity="error">{analysisError}</Alert>
                   ) : (
                     <>
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          mb: 3,
-                          gap: 2,
-                        }}
-                      >
-                        <Button
-                          variant="contained"
-                          size="large"
-                          onClick={() => router.push('/beespector')}
-                          disabled={
-                            selectedDatasets.length !== 1 ||
-                            selectedClassifiers.length !== 1 ||
-                            selectedMitigations.length !== 1
-                          }
-                          sx={{
-                            bgcolor: 'primary.main',
-                            color: 'white',
-                            px: 4,
-                            py: 1.5,
-                            '&:hover': {
-                              bgcolor: 'primary.dark',
-                            },
-                            '&:disabled': {
-                              bgcolor: 'grey.300',
-                              color: 'grey.500',
-                            },
-                          }}
+                      {(selectedDatasets.length > 1 ||
+                        selectedClassifiers.length > 1 ||
+                        selectedMitigations.length > 1) && (
+                        <Alert
+                          severity="info"
+                          sx={{ mb: 2 }}
                         >
-                          Deep Dive with Beespector →
-                        </Button>
-                        {(selectedDatasets.length > 1 ||
-                          selectedClassifiers.length > 1 ||
-                          selectedMitigations.length > 1) && (
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ textAlign: 'center' }}
-                          >
-                            Beespector requires single dataset, classifier, and mitigation selection
-                          </Typography>
-                        )}
-                      </Box>
+                          The Deep Dive step requires exactly one dataset, one classifier, and one
+                          mitigation to be selected. Please go back and adjust your selections before
+                          continuing.
+                        </Alert>
+                      )}
                       <Grid
                         container
                         spacing={2}
@@ -2044,6 +2086,100 @@ const Page: NextPage = () => {
                   )}
                 </Stack>
               );
+            case 4:
+              return (
+                <Box>
+                  {/* Context info chips */}
+                  {beespectorContextInfo && (
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      sx={{ mb: 2, flexWrap: 'wrap', gap: 1 }}
+                    >
+                      {selectedDatasets[0] && (
+                        <Chip
+                          label={`Dataset: ${selectedDatasets[0].name}`}
+                          size="small"
+                          variant="outlined"
+                          color="primary"
+                        />
+                      )}
+                      {selectedClassifiers[0] && (
+                        <Chip
+                          label={`Classifier: ${selectedClassifiers[0].name}`}
+                          size="small"
+                          variant="outlined"
+                          color="primary"
+                        />
+                      )}
+                      {selectedMitigations[0] && (
+                        <Chip
+                          label={`Mitigation: ${selectedMitigations[0]}`}
+                          size="small"
+                          variant="outlined"
+                          color="primary"
+                        />
+                      )}
+                    </Stack>
+                  )}
+
+                  {isInitializingBeespector ? (
+                    <Box
+                      sx={{
+                        minHeight: 400,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 2,
+                        textAlign: 'center',
+                      }}
+                    >
+                      <CircularProgress size={48} />
+                      <Typography
+                        variant="h6"
+                        color="text.secondary"
+                      >
+                        Initializing Deep Dive…
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                      >
+                        Training the model with your selections. This may take up to a minute.
+                      </Typography>
+                    </Box>
+                  ) : beespectorInitError ? (
+                    <Box sx={{ py: 2 }}>
+                      <Alert
+                        severity="error"
+                        sx={{ mb: 2 }}
+                      >
+                        {beespectorInitError}
+                      </Alert>
+                      <Button
+                        variant="outlined"
+                        onClick={initializeBeespector}
+                      >
+                        Retry
+                      </Button>
+                    </Box>
+                  ) : (
+                    <>
+                      <BeespectorNavbar
+                        activeTab={beespectorActiveTab}
+                        onChangeTab={setBeespectorActiveTab}
+                      />
+                      <Box sx={{ mt: 3, minHeight: 600 }}>
+                        {beespectorActiveTab === 'features' && <FeaturesPage />}
+                        {beespectorActiveTab === 'performance' && <PerformanceFairness />}
+                        {beespectorActiveTab === 'partial' && <PartialDependencies />}
+                        {beespectorActiveTab === 'datapoint' && <DatapointEditor />}
+                      </Box>
+                    </>
+                  )}
+                </Box>
+              );
             default:
               return null;
           }
@@ -2114,7 +2250,11 @@ const Page: NextPage = () => {
                   disabled={
                     (activeStep === 0 &&
                       (selectedDatasets.length === 0 || selectedClassifiers.length === 0)) ||
-                    (activeStep === 2 && selectedMitigations.length === 0)
+                    (activeStep === 2 && selectedMitigations.length === 0) ||
+                    (activeStep === 3 &&
+                      (selectedDatasets.length !== 1 ||
+                        selectedClassifiers.length !== 1 ||
+                        selectedMitigations.length !== 1))
                   }
                   size="large"
                 >

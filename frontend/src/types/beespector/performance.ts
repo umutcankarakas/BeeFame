@@ -4,6 +4,12 @@ export type PerformanceType = {
   confusion_matrix: CfMatrix;
   fairness_metrics: FairnessMetrics;
   performance_metrics: PerformanceMetrics;
+  // Mitigated model metrics (present when a mitigation method was applied)
+  mitigated_roc_curve?: RocCurve[];
+  mitigated_pr_curve?: PrCurve[];
+  mitigated_confusion_matrix?: CfMatrix;
+  mitigated_fairness_metrics?: FairnessMetrics;
+  mitigated_performance_metrics?: PerformanceMetrics;
 };
 
 export type RocCurve = {
