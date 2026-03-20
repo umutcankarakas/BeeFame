@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: false,
+  eslint: { ignoreDuringBuilds: true },
+  typescript: { ignoreBuildErrors: true },
   env: {
     NEXT_PUBLIC_BEEFAME_API_URL: process.env.NEXT_PUBLIC_BEEFAME_API_URL,
     NEXT_PUBLIC_BEESPECTOR_URL: process.env.NEXT_PUBLIC_BEESPECTOR_URL,

@@ -21,6 +21,8 @@ interface ScatterPlotProps {
   customShape?: (props: any) => React.ReactElement;
   xAxisLabel?: string;
   yAxisLabel?: string;
+  positiveColor?: string;
+  negativeColor?: string;
 }
 
 const ScatterPlot: React.FC<ScatterPlotProps> = ({
@@ -29,6 +31,8 @@ const ScatterPlot: React.FC<ScatterPlotProps> = ({
   customShape,
   xAxisLabel = 'X1',
   yAxisLabel = 'X2',
+  positiveColor = '#ff4d4f',
+  negativeColor = '#1890ff',
 }) => {
   // Separate data by prediction label
   const positiveData = data.filter((d) => d.pred_label === 1);
@@ -58,19 +62,24 @@ const ScatterPlot: React.FC<ScatterPlotProps> = ({
         width="100%"
         height="100%"
       >
-        <ScatterChart margin={{ top: 20, right: 20, bottom: 40, left: 40 }}>
+        <ScatterChart margin={{ top: 10, right: 20, bottom: 60, left: 70 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis
             type="number"
             dataKey="x"
             name={xAxisLabel}
-            label={{ value: xAxisLabel, position: 'insideBottom', offset: -10 }}
+            label={{ value: xAxisLabel, position: 'insideBottom', offset: -38 }}
+            tick={{ fontSize: 11 }}
+            tickFormatter={(v) => Number(v).toFixed(1)}
           />
           <YAxis
             type="number"
             dataKey="y"
             name={yAxisLabel}
-            label={{ value: yAxisLabel, angle: -90, position: 'insideLeft' }}
+            label={{ value: yAxisLabel, angle: -90, position: 'insideLeft', offset: 10, dy: 50 }}
+            tick={{ fontSize: 11 }}
+            tickFormatter={(v) => Number(v).toFixed(1)}
+            width={60}
           />
           <Tooltip
             cursor={{ strokeDasharray: '3 3' }}
@@ -100,19 +109,19 @@ const ScatterPlot: React.FC<ScatterPlotProps> = ({
               return null;
             }}
           />
-          <Legend />
+          <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: 8 }} />
 
           <Scatter
             name="Negative (0)"
             data={negativeData}
-            fill="#1890ff"
+            fill={negativeColor}
             shape={customShape || defaultDot}
             onClick={onPointClick}
           />
           <Scatter
             name="Positive (1)"
             data={positiveData}
-            fill="#ff4d4f"
+            fill={positiveColor}
             shape={customShape || defaultDot}
             onClick={onPointClick}
           />

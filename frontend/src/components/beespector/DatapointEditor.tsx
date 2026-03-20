@@ -15,7 +15,18 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Stack,
+  LinearProgress,
 } from '@mui/material';
+
+const BASE_COLOR = '#1976d2';
+const MIT_COLOR = '#2e7d32';
+
+// Scatter dot colors: blue palette for Base Model, green palette for Mitigated Model
+const BASE_POSITIVE_COLOR = '#0d47a1';   // deep blue  → positive prediction
+const BASE_NEGATIVE_COLOR = '#90caf9';   // light blue → negative prediction
+const MIT_POSITIVE_COLOR  = '#1b5e20';   // deep green → positive prediction
+const MIT_NEGATIVE_COLOR  = '#a5d6a7';   // light green → negative prediction
 import ScatterPlot from './charts/ScatterPlot';
 import {
   InitialDataPoint,
@@ -259,7 +270,7 @@ function DatapointEditor() {
     y: p.x2,
     pred_label: p.mitigated_pred_label,
   }));
-  const shapeFuncForScatter = (
+  const makeShapeFunc = (positiveColor: string, negativeColor: string) => (
     props: any,
     highlightId: number | null,
     currentSelectedId: number | null
@@ -268,11 +279,11 @@ function DatapointEditor() {
     const isHighlighted = payload.id === highlightId;
     const isSelected = payload.id === currentSelectedId;
     const radius = isSelected ? 7 : 5;
-    const fillColor = payload.pred_label === 1 ? '#ff4d4f' : '#1890ff';
-    let stroke = isSelected ? '#FFD700' : '#fff';
+    const fillColor = payload.pred_label === 1 ? positiveColor : negativeColor;
+    let stroke = isSelected ? '#FFD700' : 'rgba(255,255,255,0.7)';
     let strokeWidth = isSelected ? 2.5 : 1;
     if (isHighlighted) {
-      stroke = payload.pred_label === 1 ? '#8B0000' : '#00008B';
+      stroke = '#FFD700';
       strokeWidth = 3;
     }
     return (
@@ -302,189 +313,226 @@ function DatapointEditor() {
       </Box>
     );
 
+  const PredictionCard = ({
+    label,
+    color,
+    predLabel,
+    predProb,
+  }: {
+    label: string;
+    color: string;
+    predLabel: number;
+    predProb: number;
+  }) => (
+    <Box
+      sx={{
+        flex: 1,
+        border: `1px solid ${color}22`,
+        borderRadius: 2,
+        overflow: 'hidden',
+      }}
+    >
+      <Box sx={{ bgcolor: color, px: 1.5, py: 0.75 }}>
+        <Typography variant="caption" sx={{ color: '#fff', fontWeight: 600, letterSpacing: 0.5 }}>
+          {label}
+        </Typography>
+      </Box>
+      <Box sx={{ px: 1.5, py: 1 }}>
+        <Typography variant="h6" sx={{ color, fontWeight: 700, lineHeight: 1.2 }}>
+          {predLabel === 1 ? 'Positive' : 'Negative'}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Confidence
+        </Typography>
+        <LinearProgress
+          variant="determinate"
+          value={predProb * 100}
+          sx={{
+            mt: 0.5,
+            height: 6,
+            borderRadius: 3,
+            bgcolor: `${color}22`,
+            '& .MuiLinearProgress-bar': { bgcolor: color, borderRadius: 3 },
+          }}
+        />
+        <Typography variant="caption" sx={{ color, fontWeight: 600 }}>
+          {(predProb * 100).toFixed(1)}%
+        </Typography>
+      </Box>
+    </Box>
+  );
+
   return (
     <Box>
-      <Typography
-        variant="h4"
-        gutterBottom
-      >
+      <Typography variant="h5" fontWeight={700} gutterBottom>
         Datapoint Editor
       </Typography>
-      <Typography
-        variant="body1"
-        color="text.secondary"
-        paragraph
-      >
-        Select a point, modify its features, and click Apply to see how its prediction changes for
-        both models.
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        Select a point on either chart, edit its features in the panel, then click{' '}
+        <strong>Apply</strong> to see how both models respond.
       </Typography>
 
-      <Box sx={{ display: 'flex', gap: 3, mt: 3, flexWrap: 'wrap' }}>
-        <Box sx={{ flex: 1, minWidth: 400 }}>
-          <Paper sx={{ p: 2 }}>
-            <Typography
-              variant="h6"
-              gutterBottom
-            >
-              Base Model View
-            </Typography>
-            <ScatterPlot
-              data={basePlotData}
-              onPointClick={(data) => handlePointClick(data.id)}
-              customShape={(props) =>
-                shapeFuncForScatter(props, highlightedPointId, selectedPoint?.id ?? null)
-              }
-              xAxisLabel={axisLabels.x1}
-              yAxisLabel={axisLabels.x2}
-            />
-          </Paper>
-        </Box>
+      <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        {/* Scatter plots */}
+        {[
+          {
+            title: 'Base Model',
+            color: BASE_COLOR,
+            data: basePlotData,
+            positiveColor: BASE_POSITIVE_COLOR,
+            negativeColor: BASE_NEGATIVE_COLOR,
+          },
+          {
+            title: 'Mitigated Model',
+            color: MIT_COLOR,
+            data: mitigatedPlotData,
+            positiveColor: MIT_POSITIVE_COLOR,
+            negativeColor: MIT_NEGATIVE_COLOR,
+          },
+        ].map(({ title, color, data, positiveColor, negativeColor }) => {
+          const shapeFunc = makeShapeFunc(positiveColor, negativeColor);
+          return (
+            <Box key={title} sx={{ flex: 1, minWidth: 340 }}>
+              <Paper elevation={0} sx={{ border: `1px solid ${color}33`, borderRadius: 2, overflow: 'hidden' }}>
+                <Box sx={{ px: 2, py: 1.25, borderBottom: `1px solid ${color}22`, bgcolor: `${color}08`, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: color }} />
+                  <Typography variant="subtitle1" fontWeight={600} sx={{ color }}>
+                    {title}
+                  </Typography>
+                  <Box sx={{ ml: 'auto', display: 'flex', gap: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: negativeColor, border: '1px solid rgba(0,0,0,0.15)' }} />
+                      <Typography variant="caption" color="text.secondary">Negative</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: positiveColor }} />
+                      <Typography variant="caption" color="text.secondary">Positive</Typography>
+                    </Box>
+                  </Box>
+                </Box>
+                <Box sx={{ p: 1.5 }}>
+                  <ScatterPlot
+                    data={data}
+                    onPointClick={(d) => handlePointClick(d.id)}
+                    customShape={(props) =>
+                      shapeFunc(props, highlightedPointId, selectedPoint?.id ?? null)
+                    }
+                    xAxisLabel={axisLabels.x1}
+                    yAxisLabel={axisLabels.x2}
+                    positiveColor={positiveColor}
+                    negativeColor={negativeColor}
+                  />
+                </Box>
+              </Paper>
+            </Box>
+          );
+        })}
 
-        <Box sx={{ flex: 1, minWidth: 400 }}>
-          <Paper sx={{ p: 2 }}>
-            <Typography
-              variant="h6"
-              gutterBottom
-            >
-              Fair Model View
-            </Typography>
-            <ScatterPlot
-              data={mitigatedPlotData}
-              onPointClick={(data) => handlePointClick(data.id)}
-              customShape={(props) =>
-                shapeFuncForScatter(props, highlightedPointId, selectedPoint?.id ?? null)
-              }
-              xAxisLabel={axisLabels.x1}
-              yAxisLabel={axisLabels.x2}
-            />
-          </Paper>
-        </Box>
-
+        {/* Right panel */}
         <Paper
+          elevation={0}
           sx={{
-            width: '420px',
+            width: 380,
+            minWidth: 340,
             display: 'flex',
             flexDirection: 'column',
-            maxHeight: 'calc(100vh - 300px)',
-            p: 2,
+            height: 680,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 2,
+            overflow: 'hidden',
           }}
         >
           {internalSelectedPoint ? (
             <>
-              <Box>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    mb: 1,
-                  }}
-                >
-                  <Typography variant="h6">Selected ID: {internalSelectedPoint.id}</Typography>
-                  <Button
-                    onClick={handleUpdatePoint}
-                    variant="contained"
-                    size="small"
-                    disabled={isUpdating}
-                  >
-                    {isUpdating ? 'Updating...' : 'Apply'}
-                  </Button>
+              {/* Panel header */}
+              <Box sx={{ px: 2.5, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'grey.50' }}>
+                <Box>
+                  <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1 }}>
+                    Selected
+                  </Typography>
+                  <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+                    Datapoint #{internalSelectedPoint.id}
+                  </Typography>
                 </Box>
-                <Chip
-                  label={`True Label: ${internalSelectedPoint.true_label}`}
+                <Button
+                  onClick={handleUpdatePoint}
+                  variant="contained"
                   size="small"
-                  color={internalSelectedPoint.true_label === 1 ? 'error' : 'primary'}
-                />
-                <Grid
-                  container
-                  spacing={1}
-                  sx={{ mt: 1 }}
+                  disabled={isUpdating}
+                  sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600, minWidth: 80 }}
                 >
-                  <Grid
-                    item
-                    xs={6}
-                  >
-                    <Typography
-                      variant="subtitle2"
-                      color="text.secondary"
-                    >
-                      Base Model Pred:
-                    </Typography>
-                    <Typography>
-                      {internalSelectedPoint.base_pred_label} (
-                      {internalSelectedPoint.base_pred_prob.toFixed(3)})
-                    </Typography>
-                  </Grid>
-                  <Grid
-                    item
-                    xs={6}
-                  >
-                    <Typography
-                      variant="subtitle2"
-                      color="text.secondary"
-                    >
-                      Fair Model Pred:
-                    </Typography>
-                    <Typography>
-                      {internalSelectedPoint.mitigated_pred_label} (
-                      {internalSelectedPoint.mitigated_pred_prob.toFixed(3)})
-                    </Typography>
-                  </Grid>
-                </Grid>
+                  {isUpdating ? 'Applying…' : 'Apply'}
+                </Button>
               </Box>
-              <Divider sx={{ my: 2 }} />
-              <Typography
-                variant="subtitle1"
-                fontWeight="bold"
-              >
-                Edit Features:
-              </Typography>
-              <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1, mt: 1 }}>
-                <Grid
-                  container
-                  spacing={2}
-                >
+
+              <Box sx={{ px: 2.5, py: 2, flexShrink: 0 }}>
+                {/* True label */}
+                <Chip
+                  label={`Ground truth: ${internalSelectedPoint.true_label === 1 ? 'Positive (1)' : 'Negative (0)'}`}
+                  size="small"
+                  sx={{
+                    mb: 2,
+                    fontWeight: 600,
+                    bgcolor: internalSelectedPoint.true_label === 1 ? '#fff1f0' : '#e6f4ff',
+                    color: internalSelectedPoint.true_label === 1 ? '#cf1322' : '#1677ff',
+                    border: '1px solid',
+                    borderColor: internalSelectedPoint.true_label === 1 ? '#ffa39e' : '#91caff',
+                  }}
+                />
+
+                {/* Prediction cards */}
+                <Stack direction="row" spacing={1.5}>
+                  <PredictionCard
+                    label="Base Model"
+                    color={BASE_COLOR}
+                    predLabel={internalSelectedPoint.base_pred_label}
+                    predProb={internalSelectedPoint.base_pred_prob}
+                  />
+                  <PredictionCard
+                    label="Mitigated Model"
+                    color={MIT_COLOR}
+                    predLabel={internalSelectedPoint.mitigated_pred_label}
+                    predProb={internalSelectedPoint.mitigated_pred_prob}
+                  />
+                </Stack>
+              </Box>
+
+              <Divider />
+
+              {/* Feature editor */}
+              <Box sx={{ px: 2.5, pt: 1.5, pb: 1, flexShrink: 0 }}>
+                <Typography variant="subtitle2" fontWeight={700} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.8, fontSize: '0.7rem' }}>
+                  Adjust Features
+                </Typography>
+              </Box>
+              <Box sx={{ flexGrow: 1, overflowY: 'auto', px: 2.5, pb: 2 }}>
+                <Grid container spacing={1.5}>
                   {Object.entries(internalSelectedPoint.features).map(([key, val]) => {
                     const opts = categoricalOptions[key];
                     const isNumeric = typeof val === 'number' && !opts;
-                    // --- NEW LOGIC for rendering dropdowns ---
                     const isGermanCategorical =
                       contextInfo?.dataset === 'german' && germanAttributeMap[key];
 
                     return (
-                      <Grid
-                        item
-                        xs={12}
-                        key={key}
-                      >
+                      <Grid item xs={12} key={key}>
                         {isGermanCategorical ? (
-                          <FormControl
-                            fullWidth
-                            size="small"
-                          >
+                          <FormControl fullWidth size="small">
                             <InputLabel>{formatFeatureName(key)}</InputLabel>
                             <Select
                               value={String(val ?? '')}
                               label={formatFeatureName(key)}
                               onChange={(e) => handleFeatureChange(key, e.target.value)}
                             >
-                              {Object.entries(germanAttributeMap[key]).map(
-                                ([code, description]) => (
-                                  <MenuItem
-                                    key={code}
-                                    value={code}
-                                  >
-                                    {description} ({code})
-                                  </MenuItem>
-                                )
-                              )}
+                              {Object.entries(germanAttributeMap[key]).map(([code, description]) => (
+                                <MenuItem key={code} value={code}>
+                                  {description} ({code})
+                                </MenuItem>
+                              ))}
                             </Select>
                           </FormControl>
                         ) : opts ? (
-                          <FormControl
-                            fullWidth
-                            size="small"
-                          >
+                          <FormControl fullWidth size="small">
                             <InputLabel>{formatFeatureName(key)}</InputLabel>
                             <Select
                               value={String(val ?? '')}
@@ -492,12 +540,7 @@ function DatapointEditor() {
                               onChange={(e) => handleFeatureChange(key, e.target.value)}
                             >
                               {opts.map((o) => (
-                                <MenuItem
-                                  key={o}
-                                  value={o}
-                                >
-                                  {o}
-                                </MenuItem>
+                                <MenuItem key={o} value={o}>{o}</MenuItem>
                               ))}
                             </Select>
                           </FormControl>
@@ -523,17 +566,15 @@ function DatapointEditor() {
               </Box>
             </>
           ) : (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                textAlign: 'center',
-              }}
-            >
-              <Typography color="text.secondary">
-                No point selected. Click a point on a chart.
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 1.5, p: 4, textAlign: 'center' }}>
+              <Box sx={{ width: 48, height: 48, borderRadius: '50%', bgcolor: 'grey.100', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>
+                👆
+              </Box>
+              <Typography variant="subtitle1" fontWeight={600}>
+                No point selected
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Click any dot on the scatter plots to inspect and edit that datapoint.
               </Typography>
             </Box>
           )}
