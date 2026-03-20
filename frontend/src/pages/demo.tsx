@@ -21,6 +21,8 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import Grid from '@mui/material/Unstable_Grid2';
 import {
@@ -56,8 +58,6 @@ import { api } from 'src/lib/axios';
 import { useBeeFame } from 'src/contexts/BeeFameContext';
 import BeespectorNavbar from 'src/components/beespector/Navbar';
 import DatapointEditor from 'src/components/beespector/DatapointEditor';
-import FeaturesPage from 'src/components/beespector/FeaturesPage';
-import PartialDependencies from 'src/components/beespector/PartialDependencies';
 import PerformanceFairness from 'src/components/beespector/PerformanceFairness';
 import DatasetFeaturesPreview from 'src/components/beespector/DatasetFeaturesPreview';
 import { beespectorApi } from 'src/lib/beespectorAxios';
@@ -699,8 +699,12 @@ const Page: NextPage = () => {
   }>({});
   const [paramPage, setParamPage] = useState<Record<number, number>>({});
 
+  // Dataset feature accordion state (Step 1)
+  const [featureAccordionExpanded, setFeatureAccordionExpanded] = useState(false);
+  const [featureAccordionDatasetIdx, setFeatureAccordionDatasetIdx] = useState(0);
+
   // Beespector Step 4 state
-  const [beespectorActiveTab, setBeespectorActiveTab] = useState('features');
+  const [beespectorActiveTab, setBeespectorActiveTab] = useState('performance');
   const [isInitializingBeespector, setIsInitializingBeespector] = useState(false);
   const [beespectorInitError, setBeespectorInitError] = useState<string | null>(null);
   const [beespectorContextInfo, setBeespectorContextInfo] = useState<any>(null);
@@ -716,7 +720,7 @@ const Page: NextPage = () => {
   // Initialize Beespector context when entering Step 4
   useEffect(() => {
     if (activeStep === 4) {
-      setBeespectorActiveTab('features');
+      setBeespectorActiveTab('performance');
       initializeBeespector();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -756,7 +760,11 @@ const Page: NextPage = () => {
     }
   };
 
-  console.log('selectedDatasets : ', selectedDatasets);
+  // Reset accordion dataset index when dataset selection changes
+  useEffect(() => {
+    setFeatureAccordionDatasetIdx(0);
+  }, [selectedDatasets.length]);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -1255,16 +1263,43 @@ const Page: NextPage = () => {
                         {/* Dataset Feature Preview Accordion */}
                         {selectedDatasets.length > 0 && (
                           <Accordion
+                            expanded={featureAccordionExpanded}
+                            onChange={(_, exp) => setFeatureAccordionExpanded(exp)}
                             sx={{ mt: 3, mb: 1, border: '1px solid', borderColor: 'divider', borderRadius: 2, '&:before': { display: 'none' } }}
                             elevation={0}
                           >
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                               <Typography sx={{ fontWeight: 600 }}>
-                                Dataset Feature Overview — {selectedDatasets[0].name}
+                                Dataset Feature Overview
+                                {selectedDatasets.length === 1 ? ` — ${selectedDatasets[0].name}` : ` (${selectedDatasets.length} datasets)`}
                               </Typography>
                             </AccordionSummary>
                             <AccordionDetails>
-                              <DatasetFeaturesPreview datasetSlug={selectedDatasets[0].slug} />
+                              {featureAccordionExpanded && (
+                                <>
+                                  {selectedDatasets.length > 1 && (
+                                    <Tabs
+                                      value={featureAccordionDatasetIdx}
+                                      onChange={(_, v) => setFeatureAccordionDatasetIdx(v)}
+                                      sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+                                    >
+                                      {selectedDatasets.map((ds, i) => (
+                                        <Tab
+                                          key={ds.id}
+                                          label={ds.name}
+                                          value={i}
+                                        />
+                                      ))}
+                                    </Tabs>
+                                  )}
+                                  <DatasetFeaturesPreview
+                                    datasetSlug={
+                                      selectedDatasets[featureAccordionDatasetIdx]?.slug ||
+                                      selectedDatasets[0].slug
+                                    }
+                                  />
+                                </>
+                              )}
                             </AccordionDetails>
                           </Accordion>
                         )}
@@ -2169,11 +2204,13 @@ const Page: NextPage = () => {
                       <BeespectorNavbar
                         activeTab={beespectorActiveTab}
                         onChangeTab={setBeespectorActiveTab}
+                        tabs={[
+                          { id: 'performance', label: 'Performance & Fairness' },
+                          { id: 'datapoint', label: 'Datapoint Editor' },
+                        ]}
                       />
                       <Box sx={{ mt: 3, minHeight: 600 }}>
-                        {beespectorActiveTab === 'features' && <FeaturesPage />}
                         {beespectorActiveTab === 'performance' && <PerformanceFairness />}
-                        {beespectorActiveTab === 'partial' && <PartialDependencies />}
                         {beespectorActiveTab === 'datapoint' && <DatapointEditor />}
                       </Box>
                     </>

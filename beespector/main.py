@@ -353,6 +353,17 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
             context.mitigation_method = request.mitigation_method
             context.feature_columns = [c for c in df.columns if c not in ['target', 'id']]
             context.x1_feature, context.x2_feature = "age", "hours_per_week"
+            # Set sensitive feature for fairness metrics
+            context.sensitive_feature_conceptual = request.sensitive_feature
+            sensitive_key = request.sensitive_feature.lower()
+            if sensitive_key in ['gender', 'sex']:
+                context.sensitive_feature_actual = 'sex'
+            elif sensitive_key == 'age':
+                context.sensitive_feature_actual = 'age'
+            elif sensitive_key == 'race':
+                context.sensitive_feature_actual = 'race'
+            else:
+                context.sensitive_feature_actual = request.sensitive_feature
             # Use stratified split with fixed random state ***
             _, context.X_test, _, context.y_test = train_test_split(
                 df[context.feature_columns], df['target'], 
