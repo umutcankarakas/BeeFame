@@ -14,7 +14,6 @@ ENV PIP_DEFAULT_TIMEOUT=300 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_RETRIES=10
 
-# Install dependencies directly using pip
 RUN pip install --no-cache-dir --retries 10 --timeout 300 -r requirements.txt
 
 # Copy the rest of the application code into the container
