@@ -9,10 +9,6 @@ const config = {
   async rewrites() {
     return [
       {
-        source: '/api/backend/:path*',
-        destination: `${BACKEND_INTERNAL}/:path*`,
-      },
-      {
         source: '/api/beespector/:path*',
         destination: `${BEESPECTOR_INTERNAL}/api/:path*`,
       },
