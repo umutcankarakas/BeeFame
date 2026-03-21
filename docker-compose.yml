@@ -31,7 +31,7 @@ services:
       - "3001:3001"
     environment:
       - NEXT_PUBLIC_BEEFAME_API_URL=http://localhost:8000
-      - NEXT_PUBLIC_BEESPECTOR_URL=http://localhost:8001
+      - BEESPECTOR_INTERNAL_URL=http://beespector:8001
     depends_on:
       - backend
       - beespector

@@ -1,9 +1,9 @@
 import axios from 'axios';
 
-const beespectorApiHost = process.env.NEXT_PUBLIC_BEESPECTOR_URL || 'http://localhost:8001';
-
+// Use relative URL so the browser calls our own Next.js proxy (/api/beespector/...)
+// which forwards server-side to the internal beespector container.
 export const beespectorApi = axios.create({
-  baseURL: `${beespectorApiHost}/api`,
+  baseURL: `/api/beespector`,
   timeout: 200000,
   headers: {
     'Content-Type': 'application/json',
