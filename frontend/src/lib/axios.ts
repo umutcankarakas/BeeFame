@@ -1,10 +1,10 @@
 // src/lib/axios.ts
 import axios from 'axios';
 
-const baseURL = process.env.NEXT_PUBLIC_BEEFAME_API_URL || 'http://localhost:8000';
-
+// Use relative URL so the browser calls our own Next.js proxy (/api/backend/...)
+// which forwards server-side to the internal backend container.
 export const api = axios.create({
-  baseURL: baseURL,
+  baseURL: '/api/backend',
   headers: {
     'Content-Type': 'application/json',
   },

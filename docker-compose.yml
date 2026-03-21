@@ -30,7 +30,7 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - NEXT_PUBLIC_BEEFAME_API_URL=http://localhost:8000
+      - BACKEND_INTERNAL_URL=http://backend:8000
       - BEESPECTOR_INTERNAL_URL=http://beespector:8001
     depends_on:
       - backend
