@@ -169,7 +169,7 @@ def run_reject_option(model, X_train_scaled, y_train, X_test_scaled, s_test):
         return model.predict(X_test_scaled)
 
     y_pred = (proba >= 0.5).astype(int)
-    theta = 0.1  # uncertainty band around 0.5
+    theta = 0.15  # uncertainty band around 0.5
 
     uncertain = (proba >= 0.5 - theta) & (proba <= 0.5 + theta)
     # Unprivileged group (s==0): give favorable outcome
@@ -182,80 +182,24 @@ def run_reject_option(model, X_train_scaled, y_train, X_test_scaled, s_test):
 
 def run_equalized_odds(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test):
     """
-    Equalized Odds Postprocessing (Hardt et al. 2016): finds group-specific
-    thresholds that equalize TPR and FPR across groups.
+    Equalized Odds Postprocessing (Hardt et al. 2016): uses fairlearn's
+    ThresholdOptimizer to find group-specific thresholds that satisfy
+    equalized odds constraints.
     """
+    from fairlearn.postprocessing import ThresholdOptimizer
+    from sklearn.base import clone
+
     s_tr = s_train.cat.codes.values if hasattr(s_train, "cat") else np.asarray(s_train, dtype=int)
     s_te = s_test.cat.codes.values if hasattr(s_test, "cat") else np.asarray(s_test, dtype=int)
 
     model.fit(X_train_scaled, y_train)
 
-    if hasattr(model, 'predict_proba'):
-        train_proba = model.predict_proba(X_train_scaled)[:, 1]
-        test_proba = model.predict_proba(X_test_scaled)[:, 1]
-    elif hasattr(model, 'decision_function'):
-        raw_train = model.decision_function(X_train_scaled)
-        train_proba = 1.0 / (1.0 + np.exp(-raw_train))
-        raw_test = model.decision_function(X_test_scaled)
-        test_proba = 1.0 / (1.0 + np.exp(-raw_test))
-    else:
-        return model.predict(X_test_scaled)
+    postprocessor = ThresholdOptimizer(
+        estimator=model,
+        constraints="equalized_odds",
+        prefit=True,
+    )
+    postprocessor.fit(X_train_scaled, y_train, sensitive_features=s_tr)
+    y_pred = postprocessor.predict(X_test_scaled, sensitive_features=s_te)
 
-    y_tr = np.asarray(y_train, dtype=int)
-
-    # Find optimal threshold per group on training data
-    best_thresholds = {}
-    for g in np.unique(s_tr):
-        mask = s_tr == g
-        best_t, best_score = 0.5, float('inf')
-        for t in np.linspace(0.1, 0.9, 81):
-            preds = (train_proba[mask] >= t).astype(int)
-            labels = y_tr[mask]
-            tp = ((preds == 1) & (labels == 1)).sum()
-            fp = ((preds == 1) & (labels == 0)).sum()
-            fn = ((preds == 0) & (labels == 1)).sum()
-            tn = ((preds == 0) & (labels == 0)).sum()
-            tpr = tp / (tp + fn + 1e-9)
-            fpr = fp / (fp + tn + 1e-9)
-            # Minimize deviation from overall rates
-            score = abs(tpr - 0.5) + abs(fpr - 0.1)
-            if score < best_score:
-                best_score = score
-                best_t = t
-        best_thresholds[g] = best_t
-
-    # Find target TPR/FPR from overall training data
-    overall_preds = (train_proba >= 0.5).astype(int)
-    tp_all = ((overall_preds == 1) & (y_tr == 1)).sum()
-    fp_all = ((overall_preds == 1) & (y_tr == 0)).sum()
-    fn_all = ((overall_preds == 0) & (y_tr == 1)).sum()
-    tn_all = ((overall_preds == 0) & (y_tr == 0)).sum()
-    target_tpr = tp_all / (tp_all + fn_all + 1e-9)
-    target_fpr = fp_all / (fp_all + tn_all + 1e-9)
-
-    # Find per-group thresholds that best match target TPR/FPR
-    for g in np.unique(s_tr):
-        mask = s_tr == g
-        best_t, best_score = 0.5, float('inf')
-        for t in np.linspace(0.1, 0.9, 81):
-            preds = (train_proba[mask] >= t).astype(int)
-            labels = y_tr[mask]
-            tp = ((preds == 1) & (labels == 1)).sum()
-            fp = ((preds == 1) & (labels == 0)).sum()
-            fn = ((preds == 0) & (labels == 1)).sum()
-            tn = ((preds == 0) & (labels == 0)).sum()
-            tpr = tp / (tp + fn + 1e-9)
-            fpr = fp / (fp + tn + 1e-9)
-            score = abs(tpr - target_tpr) + abs(fpr - target_fpr)
-            if score < best_score:
-                best_score = score
-                best_t = t
-        best_thresholds[g] = best_t
-
-    # Apply per-group thresholds to test data
-    y_pred = np.zeros(len(test_proba), dtype=int)
-    for g in np.unique(s_te):
-        mask = s_te == g
-        y_pred[mask] = (test_proba[mask] >= best_thresholds.get(g, 0.5)).astype(int)
-
-    return y_pred
+    return np.asarray(y_pred, dtype=int)

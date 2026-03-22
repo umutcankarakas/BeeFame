@@ -282,53 +282,7 @@ class PostprocessingWrapper:
         self.base_model = base_model
         self.method = method
         self.sensitive_col = sensitive_col
-        # Learn postprocessing parameters from training data
         self._fit_postprocessing(X_train, y_train)
-
-    def _fit_postprocessing(self, X_train, y_train):
-        """Learn postprocessing thresholds from training predictions."""
-        train_proba = self.base_model.predict_proba(X_train)[:, 1]
-        y_tr = np.asarray(y_train, dtype=int)
-
-        if self.sensitive_col in X_train.columns:
-            s_col = X_train[self.sensitive_col]
-            if self.sensitive_col in ['age', 'attribute13']:
-                s_tr = np.where(s_col <= 30, 0, 1)
-            else:
-                groups = s_col.dropna().unique()
-                group_map = {g: i for i, g in enumerate(groups)}
-                s_tr = s_col.map(group_map).fillna(0).astype(int).values
-        else:
-            s_tr = np.zeros(len(y_train), dtype=int)
-
-        if self.method == 'equalized_odds_postprocessing':
-            # Find target TPR/FPR from overall training predictions
-            overall_preds = (train_proba >= 0.5).astype(int)
-            tp_all = ((overall_preds == 1) & (y_tr == 1)).sum()
-            fp_all = ((overall_preds == 1) & (y_tr == 0)).sum()
-            fn_all = ((overall_preds == 0) & (y_tr == 1)).sum()
-            tn_all = ((overall_preds == 0) & (y_tr == 0)).sum()
-            target_tpr = tp_all / (tp_all + fn_all + 1e-9)
-            target_fpr = fp_all / (fp_all + tn_all + 1e-9)
-
-            self.group_thresholds = {}
-            for g in np.unique(s_tr):
-                mask = s_tr == g
-                best_t, best_score = 0.5, float('inf')
-                for t in np.linspace(0.1, 0.9, 81):
-                    preds = (train_proba[mask] >= t).astype(int)
-                    labels = y_tr[mask]
-                    tp = ((preds == 1) & (labels == 1)).sum()
-                    fp = ((preds == 1) & (labels == 0)).sum()
-                    fn = ((preds == 0) & (labels == 1)).sum()
-                    tn = ((preds == 0) & (labels == 0)).sum()
-                    tpr = tp / (tp + fn + 1e-9)
-                    fpr = fp / (fp + tn + 1e-9)
-                    score = abs(tpr - target_tpr) + abs(fpr - target_fpr)
-                    if score < best_score:
-                        best_score = score
-                        best_t = t
-                self.group_thresholds[g] = best_t
 
     def _get_sensitive_groups(self, X):
         if self.sensitive_col in X.columns:
@@ -341,28 +295,34 @@ class PostprocessingWrapper:
                 return s_col.map(group_map).fillna(0).astype(int).values
         return np.zeros(len(X), dtype=int)
 
-    def predict(self, X):
-        proba = self.base_model.predict_proba(X)[:, 1]
-        s = self._get_sensitive_groups(X)
+    def _fit_postprocessing(self, X_train, y_train):
+        """Learn postprocessing parameters from training data."""
+        if self.method == 'equalized_odds_postprocessing':
+            from fairlearn.postprocessing import ThresholdOptimizer
+            s_tr = self._get_sensitive_groups(X_train)
+            self.threshold_optimizer = ThresholdOptimizer(
+                estimator=self.base_model,
+                constraints="equalized_odds",
+                prefit=True,
+            )
+            self.threshold_optimizer.fit(X_train, y_train, sensitive_features=s_tr)
 
+    def predict(self, X):
         if self.method == 'reject_option_classification':
+            proba = self.base_model.predict_proba(X)[:, 1]
+            s = self._get_sensitive_groups(X)
             y_pred = (proba >= 0.5).astype(int)
-            theta = 0.1
+            theta = 0.15
             uncertain = (proba >= 0.5 - theta) & (proba <= 0.5 + theta)
-            # Unprivileged (s==0): favorable, Privileged (s==1): unfavorable
             y_pred[uncertain & (s == 0)] = 1
             y_pred[uncertain & (s == 1)] = 0
             return y_pred
 
         elif self.method == 'equalized_odds_postprocessing':
-            y_pred = np.zeros(len(proba), dtype=int)
-            for g in np.unique(s):
-                mask = s == g
-                threshold = self.group_thresholds.get(g, 0.5)
-                y_pred[mask] = (proba[mask] >= threshold).astype(int)
-            return y_pred
+            s = self._get_sensitive_groups(X)
+            return np.asarray(self.threshold_optimizer.predict(X, sensitive_features=s), dtype=int)
 
-        return (proba >= 0.5).astype(int)
+        return self.base_model.predict(X)
 
     def predict_proba(self, X):
         return self.base_model.predict_proba(X)
