@@ -101,7 +101,7 @@ def load_dataset(dataset_name: str) -> pd.DataFrame:
         
     elif dataset_name == "german":
         
-        df['target'] = df['class'].apply(lambda x: 1 if x == 1 else 0)
+        df['target'] = df['class'].apply(lambda x: 0 if x == 1 else 1)
         df = df.drop(columns=['class'])
         
         
@@ -221,39 +221,19 @@ def train_model(X_train: pd.DataFrame, y_train: pd.Series, classifier_type: str,
     ClassifierClass = clf_map[clf_key]
     
     
-    default_params = {'random_state': 42}  
-    
+    default_params = {'random_state': 42}
+
     if 'svc' in clf_key or 'support_vector_classification' in clf_key:
         default_params.update({
             'probability': True,
-            'class_weight': 'balanced'  # Handle class imbalance
         })
     elif 'random_forest' in clf_key:
-        default_params.update({
-            'class_weight': 'balanced',  # Handle class imbalance
-            'n_estimators': 100,
-            'max_depth': 15,  # Prevent overfitting
-            'min_samples_split': 5,
-            'min_samples_leaf': 2
-        })
+        default_params.update({})
     elif 'xgbclassifier' in clf_key:
-        # Calculate scale_pos_weight for XGBoost class balancing
-        neg_count = (y_train == 0).sum()
-        pos_count = (y_train == 1).sum()
-        scale_pos_weight = neg_count / pos_count if pos_count > 0 else 1.0
-        
-        default_params.update({
-            'use_label_encoder': False,
-            'eval_metric': 'logloss',
-            'scale_pos_weight': scale_pos_weight,  # Handle class imbalance
-            'max_depth': 6,
-            'learning_rate': 0.1,
-            'n_estimators': 100
-        })
+        default_params.update({})
     elif 'logistic_regression' in clf_key:
         default_params.update({
-            'class_weight': 'balanced',  # Handle class imbalance
-            'max_iter': 1000  # Ensure convergence
+            'max_iter': 2000,
         })
     
     final_params = {**default_params, **{k: v for k, v in params.items() if v is not None and v != ''}}
@@ -400,7 +380,7 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
             # Use stratified split with fixed random state
             context.X_train, context.X_test, context.y_train, context.y_test = train_test_split(
                 df[context.feature_columns], df['target'],
-                test_size=0.2, random_state=42, stratify=df['target']
+                test_size=0.2, random_state=42
             )
 
             base_model_path = os.path.join(CACHE_DIR, "pretrained_adult_svc_default.pkl")
@@ -455,7 +435,7 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
             
             #Use fixed random state and stratified split ***
             context.X_train, context.X_test, context.y_train, context.y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42, stratify=y
+                X, y, test_size=0.2, random_state=42
             )
             
             context.categorical_features, context.numerical_features = get_feature_types(df)
