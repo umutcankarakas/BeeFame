@@ -688,6 +688,7 @@ const Page: NextPage = () => {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [classifiers, setClassifiers] = useState<Classifier[]>([]);
   const [mitigations, setMitigations] = useState<Mitigation[]>([]);
+  const [mitigationTab, setMitigationTab] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [analysisData, setAnalysisData] = useState<BiasSection[]>([]);
@@ -1775,99 +1776,129 @@ const Page: NextPage = () => {
                     </Alert>
                   ) : (
                     <FormControl>
-                      <Stack spacing={2}>
-                        {mitigations.map((mitigation) => (
-                          <Paper
-                            key={mitigation.id}
-                            elevation={0}
-                            onClick={() => handleMitigationSelect(mitigation.name)}
-                            sx={{
-                              p: 3,
-                              borderRadius: 2,
-                              bgcolor: 'background.default',
-                              border: '1px solid',
-                              borderColor: selectedMitigations.includes(mitigation.name)
-                                ? 'primary.main'
-                                : 'divider',
-                              transition: 'all 0.3s ease-in-out',
-                              cursor: 'pointer',
-                              '&:hover': {
-                                borderColor: 'primary.main',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                              },
-                            }}
-                          >
-                            <Box sx={{ ml: 1 }}>
-                              <Stack
-                                direction="row"
-                                alignItems="center"
-                                spacing={2}
-                                sx={{ width: '100%' }}
-                              >
-                                <Box sx={{ flexGrow: 1 }}>
-                                  <Typography
-                                    variant="h6"
-                                    sx={{
-                                      fontWeight: selectedMitigations.includes(mitigation.name)
-                                        ? 600
-                                        : 500,
-                                      mb: 1,
-                                      color: selectedMitigations.includes(mitigation.name)
-                                        ? 'primary.main'
-                                        : 'text.primary',
-                                    }}
-                                  >
-                                    {mitigation.name}
-                                  </Typography>
-                                  <Typography color="text.secondary">
-                                    {mitigation.description}
-                                  </Typography>
-                                </Box>
-                                {selectedMitigations.includes(mitigation.name) && (
-                                  <CheckCircleOutline
-                                    sx={{
-                                      color: 'primary.main',
-                                      fontSize: 24,
-                                    }}
-                                  />
-                                )}
-                              </Stack>
-                              <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-                                <Chip
-                                  label={mitigation.type}
-                                  size="small"
-                                  color={
-                                    selectedMitigations.includes(mitigation.name)
-                                      ? 'primary'
-                                      : 'default'
-                                  }
-                                  sx={{ fontWeight: 500 }}
-                                />
-                                <Link
-                                  href={mitigation.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  sx={{ textDecoration: 'none' }}
+                      <Paper elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+                        <Tabs
+                          value={mitigationTab}
+                          onChange={(_, v) => setMitigationTab(v)}
+                          sx={{
+                            borderBottom: '1px solid',
+                            borderColor: 'divider',
+                            bgcolor: 'grey.50',
+                            '& .MuiTab-root': { textTransform: 'none', fontWeight: 600, fontSize: '0.95rem' },
+                          }}
+                        >
+                          <Tab label="Preprocessing" />
+                          <Tab label="Inprocessing" />
+                          <Tab label="Postprocessing" />
+                        </Tabs>
+                        <Box sx={{ p: 2 }}>
+                          {mitigationTab === 0 && (
+                            <Stack spacing={2}>
+                              {mitigations.map((mitigation) => (
+                                <Paper
+                                  key={mitigation.id}
+                                  elevation={0}
+                                  onClick={() => handleMitigationSelect(mitigation.name)}
+                                  sx={{
+                                    p: 3,
+                                    borderRadius: 2,
+                                    bgcolor: 'background.default',
+                                    border: '1px solid',
+                                    borderColor: selectedMitigations.includes(mitigation.name)
+                                      ? 'primary.main'
+                                      : 'divider',
+                                    transition: 'all 0.3s ease-in-out',
+                                    cursor: 'pointer',
+                                    '&:hover': {
+                                      borderColor: 'primary.main',
+                                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                    },
+                                  }}
                                 >
-                                  <Chip
-                                    label="View Implementation"
-                                    size="small"
-                                    color={
-                                      selectedMitigations.includes(mitigation.name)
-                                        ? 'primary'
-                                        : 'default'
-                                    }
-                                    variant="outlined"
-                                    clickable
-                                    sx={{ fontWeight: 500 }}
-                                  />
-                                </Link>
-                              </Box>
+                                  <Box sx={{ ml: 1 }}>
+                                    <Stack
+                                      direction="row"
+                                      alignItems="center"
+                                      spacing={2}
+                                      sx={{ width: '100%' }}
+                                    >
+                                      <Box sx={{ flexGrow: 1 }}>
+                                        <Typography
+                                          variant="h6"
+                                          sx={{
+                                            fontWeight: selectedMitigations.includes(mitigation.name)
+                                              ? 600
+                                              : 500,
+                                            mb: 1,
+                                            color: selectedMitigations.includes(mitigation.name)
+                                              ? 'primary.main'
+                                              : 'text.primary',
+                                          }}
+                                        >
+                                          {mitigation.name}
+                                        </Typography>
+                                        <Typography color="text.secondary">
+                                          {mitigation.description}
+                                        </Typography>
+                                      </Box>
+                                      {selectedMitigations.includes(mitigation.name) && (
+                                        <CheckCircleOutline
+                                          sx={{
+                                            color: 'primary.main',
+                                            fontSize: 24,
+                                          }}
+                                        />
+                                      )}
+                                    </Stack>
+                                    <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                                      <Chip
+                                        label={mitigation.type}
+                                        size="small"
+                                        color={
+                                          selectedMitigations.includes(mitigation.name)
+                                            ? 'primary'
+                                            : 'default'
+                                        }
+                                        sx={{ fontWeight: 500 }}
+                                      />
+                                      <Link
+                                        href={mitigation.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        sx={{ textDecoration: 'none' }}
+                                      >
+                                        <Chip
+                                          label="View Implementation"
+                                          size="small"
+                                          color={
+                                            selectedMitigations.includes(mitigation.name)
+                                              ? 'primary'
+                                              : 'default'
+                                          }
+                                          variant="outlined"
+                                          clickable
+                                          sx={{ fontWeight: 500 }}
+                                        />
+                                      </Link>
+                                    </Box>
+                                  </Box>
+                                </Paper>
+                              ))}
+                            </Stack>
+                          )}
+                          {mitigationTab === 1 && (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200, color: 'text.secondary' }}>
+                              <Typography>Inprocessing methods coming soon.</Typography>
                             </Box>
-                          </Paper>
-                        ))}
-                      </Stack>
+                          )}
+                          {mitigationTab === 2 && (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200, color: 'text.secondary' }}>
+                              <Typography>Postprocessing methods coming soon.</Typography>
+                            </Box>
+                          )}
+                        </Box>
+                      </Paper>
                     </FormControl>
                   )}
                 </Stack>

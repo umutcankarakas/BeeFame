@@ -23,7 +23,7 @@ import {
 import { beespectorApi } from 'src/lib/beespectorAxios';
 import { PerformanceType } from 'src/types/beespector/performance';
 
-const BASE_COLOR = '#062A54';
+const BASE_COLOR = '#1976d2';
 const MIT_COLOR = '#2e7d32';
 
 // Shows the numeric delta between base and mitigated values.
