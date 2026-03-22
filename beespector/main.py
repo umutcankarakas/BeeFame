@@ -221,7 +221,7 @@ def train_model(X_train: pd.DataFrame, y_train: pd.Series, classifier_type: str,
     ClassifierClass = clf_map[clf_key]
     
     
-    default_params = {'random_state': 150200729}  
+    default_params = {'random_state': 42}  
     
     if 'svc' in clf_key or 'support_vector_classification' in clf_key:
         default_params.update({
@@ -440,7 +440,7 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
             # Use stratified split with fixed random state
             context.X_train, context.X_test, context.y_train, context.y_test = train_test_split(
                 df[context.feature_columns], df['target'],
-                test_size=0.2, random_state=150200729, stratify=df['target']
+                test_size=0.2, random_state=42, stratify=df['target']
             )
 
             base_model_path = os.path.join(CACHE_DIR, "pretrained_adult_svc_default.pkl")
@@ -495,7 +495,7 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
             
             #Use fixed random state and stratified split ***
             context.X_train, context.X_test, context.y_train, context.y_test = train_test_split(
-                X, y, test_size=0.2, random_state=150200729, stratify=y
+                X, y, test_size=0.2, random_state=42, stratify=y
             )
             
             context.categorical_features, context.numerical_features = get_feature_types(df)
@@ -556,7 +556,7 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
                 }
                 clf_key_inner = request.base_classifier.lower().replace(' ', '_').replace('_(svc)', '')
                 ClassifierClass = clf_map.get(clf_key_inner, LogisticRegression)
-                base_clf = ClassifierClass(random_state=150200729, probability=True) if 'svc' in clf_key_inner else ClassifierClass(random_state=150200729, max_iter=1000) if 'logistic' in clf_key_inner else ClassifierClass(random_state=150200729)
+                base_clf = ClassifierClass(random_state=42, probability=True) if 'svc' in clf_key_inner else ClassifierClass(random_state=42, max_iter=1000) if 'logistic' in clf_key_inner else ClassifierClass(random_state=42)
 
                 if mitigation_key == 'exponentiated_gradient':
                     mitigator = ExponentiatedGradient(estimator=base_clf, constraints=DemographicParity())
@@ -653,16 +653,16 @@ async def get_all_datapoints():
             X_sample, _, y_sample, _ = train_test_split(
                 context.X_test, context.y_test, 
                 train_size=sample_size, 
-                random_state=150200729,  
+                random_state=42,  
                 stratify=context.y_test
             )
         except ValueError:
             # Fallback if stratification fails
             logger.warning("Stratified sampling failed, using random sampling")
-            X_sample = context.X_test.sample(n=sample_size, random_state=150200729)
+            X_sample = context.X_test.sample(n=sample_size, random_state=42)
             y_sample = context.y_test.loc[X_sample.index]
     else:
-        X_sample = context.X_test.sample(n=sample_size, random_state=150200729)
+        X_sample = context.X_test.sample(n=sample_size, random_state=42)
         y_sample = context.y_test.loc[X_sample.index]
     
     # Log the sample distribution for debugging
@@ -880,7 +880,7 @@ async def get_partial_dependence():
         raise HTTPException(status_code=400, detail="Context not initialized.")
     
     
-    X_sample = context.X_test.sample(n=min(200, len(context.X_test)), random_state=150200729)
+    X_sample = context.X_test.sample(n=min(200, len(context.X_test)), random_state=42)
     features_to_plot = [context.x1_feature, context.x2_feature]
     pd_results = {}
     
