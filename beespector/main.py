@@ -275,6 +275,99 @@ def train_model(X_train: pd.DataFrame, y_train: pd.Series, classifier_type: str,
     
     return pipeline
 
+class PostprocessingWrapper:
+    """Wraps a base model and applies postprocessing adjustments to predictions."""
+
+    def __init__(self, base_model, method: str, X_train, y_train, sensitive_col: str):
+        self.base_model = base_model
+        self.method = method
+        self.sensitive_col = sensitive_col
+        # Learn postprocessing parameters from training data
+        self._fit_postprocessing(X_train, y_train)
+
+    def _fit_postprocessing(self, X_train, y_train):
+        """Learn postprocessing thresholds from training predictions."""
+        train_proba = self.base_model.predict_proba(X_train)[:, 1]
+        y_tr = np.asarray(y_train, dtype=int)
+
+        if self.sensitive_col in X_train.columns:
+            s_col = X_train[self.sensitive_col]
+            if self.sensitive_col in ['age', 'attribute13']:
+                s_tr = np.where(s_col <= 30, 0, 1)
+            else:
+                groups = s_col.dropna().unique()
+                group_map = {g: i for i, g in enumerate(groups)}
+                s_tr = s_col.map(group_map).fillna(0).astype(int).values
+        else:
+            s_tr = np.zeros(len(y_train), dtype=int)
+
+        if self.method == 'equalized_odds_postprocessing':
+            # Find target TPR/FPR from overall training predictions
+            overall_preds = (train_proba >= 0.5).astype(int)
+            tp_all = ((overall_preds == 1) & (y_tr == 1)).sum()
+            fp_all = ((overall_preds == 1) & (y_tr == 0)).sum()
+            fn_all = ((overall_preds == 0) & (y_tr == 1)).sum()
+            tn_all = ((overall_preds == 0) & (y_tr == 0)).sum()
+            target_tpr = tp_all / (tp_all + fn_all + 1e-9)
+            target_fpr = fp_all / (fp_all + tn_all + 1e-9)
+
+            self.group_thresholds = {}
+            for g in np.unique(s_tr):
+                mask = s_tr == g
+                best_t, best_score = 0.5, float('inf')
+                for t in np.linspace(0.1, 0.9, 81):
+                    preds = (train_proba[mask] >= t).astype(int)
+                    labels = y_tr[mask]
+                    tp = ((preds == 1) & (labels == 1)).sum()
+                    fp = ((preds == 1) & (labels == 0)).sum()
+                    fn = ((preds == 0) & (labels == 1)).sum()
+                    tn = ((preds == 0) & (labels == 0)).sum()
+                    tpr = tp / (tp + fn + 1e-9)
+                    fpr = fp / (fp + tn + 1e-9)
+                    score = abs(tpr - target_tpr) + abs(fpr - target_fpr)
+                    if score < best_score:
+                        best_score = score
+                        best_t = t
+                self.group_thresholds[g] = best_t
+
+    def _get_sensitive_groups(self, X):
+        if self.sensitive_col in X.columns:
+            s_col = X[self.sensitive_col]
+            if self.sensitive_col in ['age', 'attribute13']:
+                return np.where(s_col <= 30, 0, 1)
+            else:
+                groups = s_col.dropna().unique()
+                group_map = {g: i for i, g in enumerate(groups)}
+                return s_col.map(group_map).fillna(0).astype(int).values
+        return np.zeros(len(X), dtype=int)
+
+    def predict(self, X):
+        proba = self.base_model.predict_proba(X)[:, 1]
+        s = self._get_sensitive_groups(X)
+
+        if self.method == 'reject_option_classification':
+            y_pred = (proba >= 0.5).astype(int)
+            theta = 0.1
+            uncertain = (proba >= 0.5 - theta) & (proba <= 0.5 + theta)
+            # Unprivileged (s==0): favorable, Privileged (s==1): unfavorable
+            y_pred[uncertain & (s == 0)] = 1
+            y_pred[uncertain & (s == 1)] = 0
+            return y_pred
+
+        elif self.method == 'equalized_odds_postprocessing':
+            y_pred = np.zeros(len(proba), dtype=int)
+            for g in np.unique(s):
+                mask = s == g
+                threshold = self.group_thresholds.get(g, 0.5)
+                y_pred[mask] = (proba[mask] >= threshold).astype(int)
+            return y_pred
+
+        return (proba >= 0.5).astype(int)
+
+    def predict_proba(self, X):
+        return self.base_model.predict_proba(X)
+
+
 def get_mitigation_weights(X_train: pd.DataFrame, y_train: pd.Series, sensitive_col: str):
     X_train_copy = X_train.copy()
     
@@ -328,7 +421,28 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
         
         if context.dataset_name == "adult" and is_svc_scenario:
             logger.warning("Adult+SVC scenario detected. Loading pre-trained models.")
-            
+
+            context.feature_columns = [c for c in df.columns if c not in ['target', 'id']]
+            context.x1_feature, context.x2_feature = "age", "hours_per_week"
+            context.base_classifier_type = request.base_classifier
+            context.mitigation_method = request.mitigation_method
+            # Set sensitive feature early (needed for postprocessing)
+            context.sensitive_feature_conceptual = request.sensitive_feature
+            sensitive_key = request.sensitive_feature.lower()
+            if sensitive_key in ['gender', 'sex']:
+                context.sensitive_feature_actual = 'sex'
+            elif sensitive_key == 'age':
+                context.sensitive_feature_actual = 'age'
+            elif sensitive_key == 'race':
+                context.sensitive_feature_actual = 'race'
+            else:
+                context.sensitive_feature_actual = request.sensitive_feature
+            # Use stratified split with fixed random state
+            context.X_train, context.X_test, context.y_train, context.y_test = train_test_split(
+                df[context.feature_columns], df['target'],
+                test_size=0.2, random_state=150200729, stratify=df['target']
+            )
+
             base_model_path = os.path.join(CACHE_DIR, "pretrained_adult_svc_default.pkl")
             if not os.path.exists(base_model_path):
                 raise HTTPException(status_code=501, detail="Base pre-trained model not found. Please run pretrain_svc.py.")
@@ -342,33 +456,22 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
                 logger.info("No mitigation selected, using base model as mitigated model.")
             else:
                 mitigated_model_path = os.path.join(CACHE_DIR, f"mitigated_adult_svc_{mitigation_method_key}.pkl")
-                if not os.path.exists(mitigated_model_path):
-                     raise HTTPException(status_code=501, detail=f"Required pre-trained mitigated model for '{mitigation_method_key}' not found. Please run pretrain_svc.py.")
-                with open(mitigated_model_path, 'rb') as f:
-                    context.mitigated_model = cloudpickle.load(f)
-                logger.info(f"Loaded pre-trained MITIGATED model for '{mitigation_method_key}'.")
-            
+                if os.path.exists(mitigated_model_path):
+                    with open(mitigated_model_path, 'rb') as f:
+                        context.mitigated_model = cloudpickle.load(f)
+                    logger.info(f"Loaded pre-trained MITIGATED model for '{mitigation_method_key}'.")
+                elif mitigation_method_key in {'reject_option_classification', 'equalized_odds_postprocessing'}:
+                    context.mitigated_model = PostprocessingWrapper(
+                        context.base_model, mitigation_method_key,
+                        context.X_train, context.y_train,
+                        context.sensitive_feature_actual
+                    )
+                    logger.info(f"Created postprocessing wrapper for '{mitigation_method_key}'.")
+                else:
+                    logger.warning(f"No pre-trained model for '{mitigation_method_key}', using base model.")
+                    context.mitigated_model = context.base_model
+
             context.is_initialized = True
-            context.base_classifier_type = request.base_classifier
-            context.mitigation_method = request.mitigation_method
-            context.feature_columns = [c for c in df.columns if c not in ['target', 'id']]
-            context.x1_feature, context.x2_feature = "age", "hours_per_week"
-            # Set sensitive feature for fairness metrics
-            context.sensitive_feature_conceptual = request.sensitive_feature
-            sensitive_key = request.sensitive_feature.lower()
-            if sensitive_key in ['gender', 'sex']:
-                context.sensitive_feature_actual = 'sex'
-            elif sensitive_key == 'age':
-                context.sensitive_feature_actual = 'age'
-            elif sensitive_key == 'race':
-                context.sensitive_feature_actual = 'race'
-            else:
-                context.sensitive_feature_actual = request.sensitive_feature
-            # Use stratified split with fixed random state ***
-            _, context.X_test, _, context.y_test = train_test_split(
-                df[context.feature_columns], df['target'], 
-                test_size=0.2, random_state=150200729, stratify=df['target']
-            )
 
         else:
             logger.info("Training live model...")
@@ -408,16 +511,118 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
                 context.preprocessor
             )
             
-            # Train mitigated model
-            if context.mitigation_method.lower() != 'none':
+            # Train mitigated model based on method type
+            mitigation_key = context.mitigation_method.lower().replace(' ', '_')
+            PREPROCESSING_METHODS = {'relabeller', 'prevalence_sampling', 'data_repairer', 'fairness_through_unawareness'}
+            INPROCESSING_METHODS = {'exponentiated_gradient', 'grid_search'}
+            POSTPROCESSING_METHODS = {'reject_option_classification', 'equalized_odds_postprocessing'}
+
+            if mitigation_key == 'none':
+                context.mitigated_model = context.base_model
+            elif mitigation_key in POSTPROCESSING_METHODS:
+                # Postprocessing: train base model normally, wrap with postprocessing
+                context.mitigated_model = PostprocessingWrapper(
+                    context.base_model, mitigation_key,
+                    context.X_train, context.y_train,
+                    context.sensitive_feature_actual
+                )
+            elif mitigation_key in INPROCESSING_METHODS:
+                # Inprocessing: use fairlearn to wrap the classifier with fairness constraints
+                from fairlearn.reductions import ExponentiatedGradient, GridSearch, DemographicParity
+                from sklearn.base import clone as sk_clone
+
+                # Preprocess data first, then apply fairlearn on preprocessed data
+                X_train_processed = context.preprocessor.fit_transform(context.X_train)
+                sensitive_col = context.sensitive_feature_actual
+                if sensitive_col in context.X_train.columns:
+                    s_col = context.X_train[sensitive_col]
+                    if sensitive_col in ['age', 'attribute13']:
+                        s_train = np.where(s_col <= 30, 0, 1)
+                    else:
+                        groups = s_col.dropna().unique()
+                        group_map = {g: i for i, g in enumerate(groups)}
+                        s_train = s_col.map(group_map).fillna(0).astype(int).values
+                else:
+                    s_train = np.zeros(len(context.y_train), dtype=int)
+
+                # Get a bare classifier (not in a pipeline)
+                clf_map = {
+                    'xgbclassifier': XGBClassifier,
+                    'random_forest': RandomForestClassifier,
+                    'random_forest_classifier': RandomForestClassifier,
+                    'svc': SVC,
+                    'support_vector_classification': SVC,
+                    'logistic_regression': LogisticRegression
+                }
+                clf_key_inner = request.base_classifier.lower().replace(' ', '_').replace('_(svc)', '')
+                ClassifierClass = clf_map.get(clf_key_inner, LogisticRegression)
+                base_clf = ClassifierClass(random_state=150200729, probability=True) if 'svc' in clf_key_inner else ClassifierClass(random_state=150200729, max_iter=1000) if 'logistic' in clf_key_inner else ClassifierClass(random_state=150200729)
+
+                if mitigation_key == 'exponentiated_gradient':
+                    mitigator = ExponentiatedGradient(estimator=base_clf, constraints=DemographicParity())
+                else:
+                    mitigator = GridSearch(estimator=base_clf, constraints=DemographicParity(), grid_size=20)
+
+                mitigator.fit(X_train_processed, context.y_train, sensitive_features=s_train)
+
+                # Wrap in a pipeline-like object so predict/predict_proba work with raw data
+                class InprocessingWrapper:
+                    def __init__(self, preprocessor, mitigator):
+                        self.preprocessor = preprocessor
+                        self.mitigator = mitigator
+                    def predict(self, X):
+                        return self.mitigator.predict(self.preprocessor.transform(X))
+                    def predict_proba(self, X):
+                        X_proc = self.preprocessor.transform(X)
+                        if hasattr(self.mitigator, '_pmf_predict'):
+                            return self.mitigator._pmf_predict(X_proc)
+                        # Fallback: build probabilities from predictions
+                        preds = self.mitigator.predict(X_proc)
+                        return np.column_stack([1 - preds, preds]).astype(float)
+
+                context.mitigated_model = InprocessingWrapper(context.preprocessor, mitigator)
+
+            elif mitigation_key == 'fairness_through_unawareness':
+                # FTU: drop sensitive column and retrain
+                sensitive_col = context.sensitive_feature_actual
+                X_train_ftu = context.X_train.drop(columns=[sensitive_col], errors='ignore')
+                # Rebuild preprocessor without the sensitive feature
+                cat_feats_ftu = [f for f in context.categorical_features if f != sensitive_col]
+                num_feats_ftu = [f for f in context.numerical_features if f != sensitive_col]
+                preprocessor_ftu = create_preprocessor(cat_feats_ftu, num_feats_ftu, context.dataset_name)
+                ftu_model = train_model(
+                    X_train_ftu, context.y_train,
+                    request.base_classifier, request.classifier_params,
+                    preprocessor_ftu
+                )
+                # Wrap so it drops the sensitive column before predicting
+                class FTUWrapper:
+                    def __init__(self, model, drop_col):
+                        self.model = model
+                        self.drop_col = drop_col
+                    def predict(self, X):
+                        return self.model.predict(X.drop(columns=[self.drop_col], errors='ignore'))
+                    def predict_proba(self, X):
+                        return self.model.predict_proba(X.drop(columns=[self.drop_col], errors='ignore'))
+                context.mitigated_model = FTUWrapper(ftu_model, sensitive_col)
+
+            elif mitigation_key in PREPROCESSING_METHODS:
+                # Standard preprocessing: use sample weighting approach
                 weights = get_mitigation_weights(context.X_train, context.y_train, context.sensitive_feature_actual)
                 context.mitigated_model = train_model(
-                    context.X_train, context.y_train, 
-                    request.base_classifier, request.classifier_params, 
+                    context.X_train, context.y_train,
+                    request.base_classifier, request.classifier_params,
                     context.preprocessor, sample_weight=weights
                 )
             else:
-                context.mitigated_model = context.base_model
+                # Unknown method: fallback to sample weighting
+                logger.warning(f"Unknown mitigation method '{mitigation_key}', using sample weighting fallback.")
+                weights = get_mitigation_weights(context.X_train, context.y_train, context.sensitive_feature_actual)
+                context.mitigated_model = train_model(
+                    context.X_train, context.y_train,
+                    request.base_classifier, request.classifier_params,
+                    context.preprocessor, sample_weight=weights
+                )
             
             context.is_initialized = True
         
