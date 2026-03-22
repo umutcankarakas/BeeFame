@@ -33,5 +33,26 @@
     "type": "Inprocessing",
     "url": "https://fairlearn.org/v0.10/api_reference/generated/fairlearn.reductions.ExponentiatedGradient.html",
     "description": "Trains a model subject to fairness constraints by iteratively reweighting training samples. Uses Demographic Parity as the constraint to equalize positive prediction rates across groups."
+  },
+  {
+    "id": 6,
+    "name": "Grid Search",
+    "type": "Inprocessing",
+    "url": "https://fairlearn.org/v0.10/api_reference/generated/fairlearn.reductions.GridSearch.html",
+    "description": "Searches over a grid of Lagrange multipliers to find a model that satisfies Demographic Parity constraints while maximizing accuracy. Enumerates candidate models and selects the best feasible one."
+  },
+  {
+    "id": 7,
+    "name": "Reject Option Classification",
+    "type": "Postprocessing",
+    "url": "https://aif360.readthedocs.io/en/latest/modules/generated/aif360.algorithms.postprocessing.RejectOptionClassification.html",
+    "description": "Adjusts predictions near the decision boundary to favor the unprivileged group. Samples with uncertain predictions are relabeled to promote fairness (Kamiran et al. 2012)."
+  },
+  {
+    "id": 8,
+    "name": "Equalized Odds Postprocessing",
+    "type": "Postprocessing",
+    "url": "https://aif360.readthedocs.io/en/latest/modules/generated/aif360.algorithms.postprocessing.EqOddsPostprocessing.html",
+    "description": "Adjusts classifier predictions to satisfy equalized odds by finding optimal group-specific thresholds that equalize true positive and false positive rates across groups (Hardt et al. 2016)."
   }
 ]

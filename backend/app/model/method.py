@@ -16,4 +16,7 @@ class MethodName(Enum):
     Relabeller = "Relabeller"
     FairnessThruUnawareness = "Fairness Through Unawareness"
     ExponentiatedGradient = "Exponentiated Gradient"
+    GridSearch = "Grid Search"
+    RejectOptionClassification = "Reject Option Classification"
+    EqualizedOddsPostprocessing = "Equalized Odds Postprocessing"
 

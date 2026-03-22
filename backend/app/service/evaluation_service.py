@@ -10,7 +10,11 @@ from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.base import clone as sk_clone
-from .utils.evaluation_utils import run_data_repairer, run_label_flipping, run_prevalence_sampling, run_relabeller, run_ftu, run_exponentiated_gradient
+from .utils.evaluation_utils import (
+    run_data_repairer, run_label_flipping, run_prevalence_sampling,
+    run_relabeller, run_ftu, run_exponentiated_gradient,
+    run_grid_search, run_reject_option, run_equalized_odds,
+)
 from ucimlrepo import fetch_ucirepo
 import warnings
 import logging
@@ -80,10 +84,14 @@ class EvaluationService:
                 "Relabeller": run_relabeller,
                 "Fairness Through Unawareness": run_ftu,
                 "Exponentiated Gradient": run_exponentiated_gradient,
+                "Grid Search": run_grid_search,
+                "Reject Option Classification": run_reject_option,
+                "Equalized Odds Postprocessing": run_equalized_odds,
             }
 
             # Methods that need special handling in the evaluation loop
-            INPROCESSING_METHODS = {"Exponentiated Gradient"}
+            INPROCESSING_METHODS = {"Exponentiated Gradient", "Grid Search"}
+            POSTPROCESSING_METHODS = {"Reject Option Classification", "Equalized Odds Postprocessing"}
             FTU_METHOD = "Fairness Through Unawareness"
 
             dataset_names = [d.value for d in dataset_list]
@@ -193,6 +201,13 @@ class EvaluationService:
                                 # Inprocessing: method wraps the model and trains it with fairness constraints
                                 mitigated_model = method_func(X_train_scaled, y_train, s_train, classifiers[model_name])
                                 y_pred = mitigated_model.predict(X_test_scaled)
+                            elif method_name in POSTPROCESSING_METHODS:
+                                # Postprocessing: train model normally, then adjust predictions
+                                model = sk_clone(classifiers[model_name])
+                                if method_name == "Equalized Odds Postprocessing":
+                                    y_pred = method_func(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test)
+                                else:
+                                    y_pred = method_func(model, X_train_scaled, y_train, X_test_scaled, s_test)
                             else:
                                 # Standard preprocessing: transform data, then train model
                                 X_train_transformed, y_train_transformed = method_func(X_train, y_train, s_train)
