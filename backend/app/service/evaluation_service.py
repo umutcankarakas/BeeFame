@@ -9,7 +9,8 @@ from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
-from .utils.evaluation_utils import run_data_repairer, run_label_flipping, run_prevalence_sampling, run_relabeller
+from sklearn.base import clone as sk_clone
+from .utils.evaluation_utils import run_data_repairer, run_label_flipping, run_prevalence_sampling, run_relabeller, run_ftu, run_exponentiated_gradient
 from ucimlrepo import fetch_ucirepo
 import warnings
 import logging
@@ -76,8 +77,14 @@ class EvaluationService:
                 "Label Flipping": run_label_flipping,
                 "Data Repairer": run_data_repairer,
                 "Prevalence Sampling": run_prevalence_sampling,
-                "Relabeller": run_relabeller
+                "Relabeller": run_relabeller,
+                "Fairness Through Unawareness": run_ftu,
+                "Exponentiated Gradient": run_exponentiated_gradient,
             }
+
+            # Methods that need special handling in the evaluation loop
+            INPROCESSING_METHODS = {"Exponentiated Gradient"}
+            FTU_METHOD = "Fairness Through Unawareness"
 
             dataset_names = [d.value for d in dataset_list]
             classifier_names = [c.value for c in classifier_list]
@@ -166,19 +173,33 @@ class EvaluationService:
                             X_train_scaled = scaler.fit_transform(X_train)
                             X_test_scaled = scaler.transform(X_test)
 
-                            # Apply fairness mitigation
-                            method_func = methods[method_name]
-                            X_train_transformed, y_train_transformed = method_func(X_train, y_train, s_train)
-                            X_train_transformed_scaled = scaler.transform(X_train_transformed)
-
                             # Explicitly add column names to y_test and s_test
                             y_test_df = pd.DataFrame(y_test.values, columns=['class'])  # Ensure y_test has a 'class' column
                             s_test_df = pd.DataFrame(s_test.values, columns=[sensitive_column])
 
-                            # Train and evaluate the specific model
-                            model = classifiers[model_name]
-                            model.fit(X_train_transformed_scaled, y_train_transformed)
-                            y_pred = model.predict(X_test_scaled)
+                            method_func = methods[method_name]
+
+                            if method_name == FTU_METHOD:
+                                # FTU: drop sensitive column from both train and test, refit scaler
+                                X_train_transformed, y_train_transformed = method_func(X_train, y_train, s_train, sensitive_column=sensitive_column)
+                                X_test_ftu = X_test.drop(columns=[sensitive_column]) if sensitive_column in X_test.columns else X_test
+                                ftu_scaler = StandardScaler()
+                                X_train_transformed_scaled = ftu_scaler.fit_transform(X_train_transformed)
+                                X_test_eval_scaled = ftu_scaler.transform(X_test_ftu)
+                                model = sk_clone(classifiers[model_name])
+                                model.fit(X_train_transformed_scaled, y_train_transformed)
+                                y_pred = model.predict(X_test_eval_scaled)
+                            elif method_name in INPROCESSING_METHODS:
+                                # Inprocessing: method wraps the model and trains it with fairness constraints
+                                mitigated_model = method_func(X_train_scaled, y_train, s_train, classifiers[model_name])
+                                y_pred = mitigated_model.predict(X_test_scaled)
+                            else:
+                                # Standard preprocessing: transform data, then train model
+                                X_train_transformed, y_train_transformed = method_func(X_train, y_train, s_train)
+                                X_train_transformed_scaled = scaler.transform(X_train_transformed)
+                                model = sk_clone(classifiers[model_name])
+                                model.fit(X_train_transformed_scaled, y_train_transformed)
+                                y_pred = model.predict(X_test_scaled)
 
                             accuracy = accuracy_score(y_test, y_pred)
 

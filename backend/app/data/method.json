@@ -19,5 +19,19 @@
     "type": "Preprocessing",
     "url": "https://github.com/dssg/aequitas/blob/master/src/aequitas/flow/methods/preprocessing/data_repairer.py",
     "description": "Transforms the data distribution so that a given feature distribution is marginally independent of the sensitive attributes."
+  },
+  {
+    "id": 4,
+    "name": "Fairness Through Unawareness",
+    "type": "Preprocessing",
+    "url": "https://en.wikipedia.org/wiki/Fairness_(machine_learning)#Fairness_through_unawareness",
+    "description": "Removes sensitive attributes from the training data so the model cannot directly use them for predictions. A simple baseline approach to fairness."
+  },
+  {
+    "id": 5,
+    "name": "Exponentiated Gradient",
+    "type": "Inprocessing",
+    "url": "https://fairlearn.org/v0.10/api_reference/generated/fairlearn.reductions.ExponentiatedGradient.html",
+    "description": "Trains a model subject to fairness constraints by iteratively reweighting training samples. Uses Demographic Parity as the constraint to equalize positive prediction rates across groups."
   }
 ]

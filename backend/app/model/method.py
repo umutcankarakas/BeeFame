@@ -14,4 +14,6 @@ class MethodName(Enum):
     DataRepairer = "Data Repairer"
     PrevalanceSampling = "Prevalence Sampling"
     Relabeller = "Relabeller"
+    FairnessThruUnawareness = "Fairness Through Unawareness"
+    ExponentiatedGradient = "Exponentiated Gradient"
 

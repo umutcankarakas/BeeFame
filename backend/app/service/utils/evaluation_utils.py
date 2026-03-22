@@ -105,3 +105,29 @@ def run_relabeller(X_train, y_train, s_train):
     relabeller.fit(X_train, y_train, s_train)
     y_transformed = relabeller.transform(X_train)
     return X_train, y_transformed
+
+
+def run_ftu(X_train, y_train, s_train, sensitive_column=None):
+    """Fairness Through Unawareness: drop the sensitive column from features."""
+    X = X_train.copy()
+    if sensitive_column and sensitive_column in X.columns:
+        X = X.drop(columns=[sensitive_column])
+    return X, y_train.copy()
+
+
+def run_exponentiated_gradient(X_train_scaled, y_train, s_train, model):
+    """
+    Exponentiated Gradient (Agarwal et al. 2018): trains the given estimator
+    subject to Demographic Parity constraints via iterative reweighting.
+    Returns the fitted mitigated model.
+    """
+    from fairlearn.reductions import ExponentiatedGradient, DemographicParity
+    from sklearn.base import clone
+
+    s = s_train.cat.codes if hasattr(s_train, "cat") else s_train.astype(int)
+    mitigator = ExponentiatedGradient(
+        estimator=clone(model),
+        constraints=DemographicParity(),
+    )
+    mitigator.fit(X_train_scaled, y_train, sensitive_features=s)
+    return mitigator
