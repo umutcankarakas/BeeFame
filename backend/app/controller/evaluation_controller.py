@@ -9,6 +9,7 @@ router = APIRouter(
     tags=["Evaluation"],
 )
 
+
 @router.post("/", response_model=SuccessResponse)
 def get_evaluation(request: EvaluationRequest):
     service = EvaluationService()
@@ -18,6 +19,8 @@ def get_evaluation(request: EvaluationRequest):
         request.classifier_names,
         request.method_names,
         test_size=request.test_size,
+        subgroup_pairs=request.subgroup_pairs,
+        target_subgroup=request.target_subgroup,
     )
-    
+
     return SuccessResponse(data=result)

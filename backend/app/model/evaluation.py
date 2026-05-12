@@ -6,11 +6,19 @@ from model.classifier import ClassifierName
 from model.dataset import DatasetName
 from model.method import MethodName
 
+
 class ClassificationReport(BaseModel):
     precision: Dict[str, float]
     recall: Dict[str, float]
     f1_score: Dict[str, float]
     support: Dict[str, float]
+
+
+class SubgroupAUCResult(BaseModel):
+    subgroup_auc: Optional[Dict[str, Optional[float]]] = None
+    bpsn_auc: Optional[Dict[str, Optional[float]]] = None
+    bnsp_auc: Optional[Dict[str, Optional[float]]] = None
+
 
 class EvaluationResult(BaseModel):
     name: str
@@ -23,6 +31,23 @@ class EvaluationResult(BaseModel):
     equal_opportunity_difference: float
     average_odds_difference: float
     theil_index: float
+    is_subgroup: bool = False
+    subgroup_auc_metrics: Optional[SubgroupAUCResult] = None
+
+
+class SubgroupPairRequest(BaseModel):
+    col1: str
+    col2: str
+    col3: Optional[str] = None   # 3'lü kombinasyon için
+    label: str
+
+
+class TargetSubgroupRequest(BaseModel):
+    col1: str
+    col2: str
+    col3: Optional[str] = None
+    group_label: str  # e.g. "Age=Young × Gender=Female"
+
 
 class EvaluationRequest(BaseModel):
     dataset_names: List[DatasetName]
@@ -30,6 +55,8 @@ class EvaluationRequest(BaseModel):
     method_names: List[MethodName]
     test_size: Optional[float] = 0.2
     train_size: Optional[float] = None
+    subgroup_pairs: Optional[List[SubgroupPairRequest]] = None  # None = subgroup yok
+    target_subgroup: Optional[TargetSubgroupRequest] = None     # mitigation hedef subgroup
 
     @model_validator(mode="after")
     def validate_split_sizes(self):

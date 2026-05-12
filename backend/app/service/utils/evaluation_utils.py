@@ -151,11 +151,24 @@ def run_grid_search(X_train_scaled, y_train, s_train, model):
     return mitigator
 
 
-def run_reject_option(model, X_train_scaled, y_train, X_test_scaled, s_test):
+def run_reject_option(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test):
     """
     Reject Option Classification (Kamiran et al. 2012): adjusts predictions
     near the decision boundary to favor the unprivileged group.
+
+    Unprivileged group is determined dynamically from training selection rates
+    (the group with the lower positive rate) rather than hardcoding s==0.
     """
+    s_tr = s_train.cat.codes.values if hasattr(s_train, "cat") else np.asarray(s_train, dtype=int)
+    y_tr = np.asarray(y_train, dtype=int)
+    pos_rates = {
+        g: np.mean(y_tr[s_tr == g] == 1)
+        for g in np.unique(s_tr)
+        if (s_tr == g).sum() > 0
+    }
+    unprivileged_val = min(pos_rates, key=pos_rates.get)
+    privileged_val   = max(pos_rates, key=pos_rates.get)
+
     s = s_test.cat.codes.values if hasattr(s_test, "cat") else np.asarray(s_test, dtype=int)
 
     model.fit(X_train_scaled, y_train)
@@ -172,10 +185,8 @@ def run_reject_option(model, X_train_scaled, y_train, X_test_scaled, s_test):
     theta = 0.15  # uncertainty band around 0.5
 
     uncertain = (proba >= 0.5 - theta) & (proba <= 0.5 + theta)
-    # Unprivileged group (s==0): give favorable outcome
-    y_pred[uncertain & (s == 0)] = 1
-    # Privileged group (s==1): give unfavorable outcome
-    y_pred[uncertain & (s == 1)] = 0
+    y_pred[uncertain & (s == unprivileged_val)] = 1
+    y_pred[uncertain & (s == privileged_val)]   = 0
 
     return y_pred
 
