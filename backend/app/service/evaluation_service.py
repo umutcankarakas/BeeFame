@@ -315,10 +315,9 @@ class EvaluationService:
                                 ref_col = col1 if col1 in mitigated_preds_per_col else first_col
                                 _, _, y_pred_sg, y_prob_sg = mitigated_preds_per_col[ref_col]
 
-                                sg_accuracy = accuracy_score(ref_y_test, y_pred_sg)
                                 subgroup_series = create_subgroup_column(ref_X_test, cols)
 
-                                per_group, fairness_index = calculate_per_group_metrics(
+                                per_group, fairness_index, sg_accuracy = calculate_per_group_metrics(
                                     ref_y_test, y_pred_sg, y_prob_sg,
                                     subgroup_series, cols
                                 )

@@ -102,10 +102,10 @@ def calculate_per_group_metrics(
     y_prob,
     subgroup_series: pd.Series,
     cols: List[str],
-) -> Tuple[Dict[str, Dict[str, Any]], float]:
+) -> Tuple[Dict[str, Dict[str, Any]], float, float]:
     """
     Her subgroup'u overall'a karşı ölçer.
-    Returns (per_group_dict, fairness_index).
+    Returns (per_group_dict, fairness_index, weighted_accuracy).
     privilege_status: 'privileged' | 'unprivileged' | 'neutral'
     """
     y_true_arr = np.array(y_true).flatten()
@@ -125,6 +125,7 @@ def calculate_per_group_metrics(
     results = {}
     group_weighted_scores: Dict[str, float] = {}
     group_supports: Dict[str, float] = {}
+    group_sizes: Dict[str, int] = {}
 
     for group in sg_arr.unique():
         mask = (sg_arr == group).values
@@ -216,6 +217,7 @@ def calculate_per_group_metrics(
         max_div = max(abs(spd), fpr_div, fnr_div)
         group_weighted_scores[readable] = support_g * max_div
         group_supports[readable] = support_g
+        group_sizes[readable] = n_g
 
         results[readable] = {
             "SPD": spd,
@@ -254,7 +256,14 @@ def calculate_per_group_metrics(
         if group_supports.get(label, 0) > 0.1
     )) if group_weighted_scores else 0.0
 
-    return results, fairness_index
+    # Weighted average accuracy across subgroups (weight = group size / total)
+    weighted_accuracy = float(sum(
+        results[g]["accuracy"] * group_sizes[g]
+        for g in results
+        if results[g]["accuracy"] is not None
+    ) / n_total) if results and n_total > 0 else 0.0
+
+    return results, fairness_index, weighted_accuracy
 
 # ─────────────────────────────────────────────
 # initial_dataset_analysis
@@ -371,7 +380,7 @@ def initial_dataset_analysis(
 
                     subgroup_series = create_subgroup_column(X_test, cols)
 
-                    per_group, fairness_index = calculate_per_group_metrics(
+                    per_group, fairness_index, sg_accuracy = calculate_per_group_metrics(
                         y_test, y_pred,
                         y_prob_series if has_proba else None,
                         subgroup_series, cols
@@ -381,7 +390,7 @@ def initial_dataset_analysis(
                         "Dataset": dataset_name,
                         "Classifier": classifier_name,
                         "Sensitive Column": label,
-                        "Model Accuracy": accuracy,
+                        "Model Accuracy": sg_accuracy,
                         "Is Subgroup": True,
                         "Per Group Metrics": per_group,
                         "Fairness Index": fairness_index,
