@@ -58,6 +58,49 @@ All metrics are displayed as `1 - m` (or `m` for Disparate Impact), so **higher 
 | Disparate Impact (m) | 1.0 |
 | Theil Index (1-m) | 1.0 |
 
+## Subgroup (Intersectional) Analysis
+
+Beyond single sensitive attributes, BeeFAME supports **intersectional fairness** — analysing groups defined by the combination of two or three sensitive columns at once (e.g. Gender × Age, Gender × Race × Age).
+
+### How it works
+
+1. **Select subgroup pairs** — in the wizard's Step 1, choose one or more attribute combinations to inspect. Available pairs are fetched from `GET /datasets/{slug}/subgroup-pairs`.
+2. **Subgroups are formed automatically** — every unique value combination becomes its own group (e.g. *Gender=Female × Age=Young*, *Gender=Male × Age=Old*, …).
+3. **Per-group metrics are computed** — each group is compared against the overall test-set baseline:
+
+| Metric | Description |
+|--------|-------------|
+| SPD | Selection-rate gap vs. overall |
+| EOD | True-positive-rate gap vs. overall |
+| AOD | Average of TPR + FPR gap vs. overall |
+| DI | Selection-rate ratio vs. overall |
+| Theil | Entropy divergence for that group |
+| FPR / FNR divergence | Absolute FPR and FNR gap vs. overall |
+| PPV | Precision within the group |
+| Subgroup AUC | ROC-AUC within the group |
+| BPSN / BNSP / Pinned AUC | Background-positive/negative AUC variants |
+| Accuracy | Accuracy within the group |
+
+4. **Privilege status** — each group is labelled *privileged*, *unprivileged*, or *neutral* based on the average of its SPD, EOD, and AOD (threshold ±0.05).
+5. **Worst-case group** — the unprivileged/neutral group with the highest weighted divergence is flagged as the worst case (Kearns 2018 γ-unfairness certificate).
+
+### Fairness Index
+
+Reported alongside each subgroup pair result:
+
+```
+Fairness Index = Σ (support_g × max(|SPD_g|, |FPR_div_g|, |FNR_div_g|))
+                 for groups where support_g > 0.1
+```
+
+- **support_g** = fraction of the test set that belongs to group *g*
+- Only groups representing at least 10% of the test set are included (small groups are noisy)
+- **Lower = fairer** (0 means no measured divergence for any large group)
+
+### Target Subgroup Mitigation
+
+When running the evaluation wizard you can optionally nominate one group as the **target subgroup**. The chosen mitigation algorithm then uses a binary sensitive attribute (1 = target group, 0 = everyone else) instead of the original sensitive column, focusing bias reduction on that specific intersection. Fairness metrics are still reported against the original sensitive columns.
+
 ## API Docs
 
 Once running, interactive API docs are available at:
