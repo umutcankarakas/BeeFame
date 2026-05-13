@@ -751,19 +751,35 @@ async def get_performance_fairness():
     cm = confusion_matrix(y_true, base_labels)
     
     stat_parity, disparate_impact, eq_opp = 0.0, 1.0, 0.0
-    
-    # Use sensitive_feature_actual if available
+
+    def get_group_masks(X, sensitive_col_name):
+        """Return (g1_mask, g2_mask) using the same binning logic as get_mitigation_weights."""
+        if sensitive_col_name not in X.columns:
+            return None, None
+        col = X[sensitive_col_name]
+        if sensitive_col_name in ['age', 'attribute13']:
+            g1_mask = col <= 30
+            g2_mask = col > 30
+        else:
+            groups = col.dropna().unique()
+            if len(groups) < 2:
+                return None, None
+            g1_mask = col == groups[0]
+            g2_mask = col == groups[1]
+        return g1_mask, g2_mask
+
     sensitive_col_name = getattr(context, 'sensitive_feature_actual', None)
-    if sensitive_col_name and sensitive_col_name in context.X_test.columns:
-        sensitive_col = context.X_test[sensitive_col_name]
-        groups = sensitive_col.dropna().unique()
-        if len(groups) >= 2:
-            g1_mask, g2_mask = (sensitive_col == groups[0]), (sensitive_col == groups[1])
-            p_g1, p_g2 = base_labels[g1_mask].mean(), base_labels[g2_mask].mean()
-            stat_parity = p_g1 - p_g2
-            disparate_impact = p_g1 / (p_g2 + 1e-6)
-            tpr_g1, tpr_g2 = base_labels[(g1_mask) & (y_true == 1)].mean(), base_labels[(g2_mask) & (y_true == 1)].mean()
-            eq_opp = tpr_g1 - tpr_g2
+    g1_mask, g2_mask = get_group_masks(context.X_test, sensitive_col_name) if sensitive_col_name else (None, None)
+
+    if g1_mask is not None:
+        p_g1, p_g2 = base_labels[g1_mask].mean(), base_labels[g2_mask].mean()
+        stat_parity = p_g1 - p_g2
+        disparate_impact = p_g1 / (p_g2 + 1e-6)
+        pos1 = (g1_mask) & (y_true == 1)
+        pos2 = (g2_mask) & (y_true == 1)
+        tpr_g1 = base_labels[pos1].mean() if pos1.sum() > 0 else 0.0
+        tpr_g2 = base_labels[pos2].mean() if pos2.sum() > 0 else 0.0
+        eq_opp = float(np.nan_to_num(tpr_g1 - tpr_g2))
 
     # --- Mitigated model metrics ---
     mit_labels = context.mitigated_model.predict(context.X_test)
@@ -773,17 +789,15 @@ async def get_performance_fairness():
     mit_cm = confusion_matrix(y_true, mit_labels)
 
     mit_stat_parity, mit_disparate_impact, mit_eq_opp = 0.0, 1.0, 0.0
-    if sensitive_col_name and sensitive_col_name in context.X_test.columns:
-        sensitive_col = context.X_test[sensitive_col_name]
-        groups = sensitive_col.dropna().unique()
-        if len(groups) >= 2:
-            g1_mask, g2_mask = (sensitive_col == groups[0]), (sensitive_col == groups[1])
-            mp_g1, mp_g2 = mit_labels[g1_mask].mean(), mit_labels[g2_mask].mean()
-            mit_stat_parity = mp_g1 - mp_g2
-            mit_disparate_impact = mp_g1 / (mp_g2 + 1e-6)
-            mtpr_g1 = mit_labels[(g1_mask) & (y_true == 1)].mean()
-            mtpr_g2 = mit_labels[(g2_mask) & (y_true == 1)].mean()
-            mit_eq_opp = mtpr_g1 - mtpr_g2
+    if g1_mask is not None:
+        mp_g1, mp_g2 = mit_labels[g1_mask].mean(), mit_labels[g2_mask].mean()
+        mit_stat_parity = mp_g1 - mp_g2
+        mit_disparate_impact = mp_g1 / (mp_g2 + 1e-6)
+        mpos1 = (g1_mask) & (y_true == 1)
+        mpos2 = (g2_mask) & (y_true == 1)
+        mtpr_g1 = mit_labels[mpos1].mean() if mpos1.sum() > 0 else 0.0
+        mtpr_g2 = mit_labels[mpos2].mean() if mpos2.sum() > 0 else 0.0
+        mit_eq_opp = float(np.nan_to_num(mtpr_g1 - mtpr_g2))
 
     return {
         "roc_curve": [{"fpr": f, "tpr": t} for f, t in zip(fpr, tpr)],

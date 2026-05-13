@@ -385,15 +385,21 @@ const Page: NextPage = () => {
     groupLabel: string; pairLabel: string; col1: string; col2: string; col3?: string;
   } | null>(null);
 
-  // All subgroup groups available as mitigation targets (user selects any).
-  const mitigationTargetGroups = analysisData
-    .filter((s) => s.isSubgroup)
-    .flatMap((s) => {
-      const pair = selectedSubgroupPairs.find((p) => p.label === s.protectedAttribute);
-      if (!pair) return [];
-      return (s.perGroupSections ?? [])
-        .map((g) => ({ groupLabel: g.groupLabel, pairLabel: s.protectedAttribute, col1: pair.col1, col2: pair.col2, col3: pair.col3 }));
-    });
+  // All subgroup groups available as mitigation targets — deduplicated by pairLabel+groupLabel
+  // so multiple classifiers don't produce duplicate entries.
+  const mitigationTargetGroups = Array.from(
+    new Map(
+      analysisData
+        .filter((s) => s.isSubgroup)
+        .flatMap((s) => {
+          const pair = selectedSubgroupPairs.find((p) => p.label === s.protectedAttribute);
+          if (!pair) return [];
+          return (s.perGroupSections ?? [])
+            .map((g) => ({ groupLabel: g.groupLabel, pairLabel: s.protectedAttribute, col1: pair.col1, col2: pair.col2, col3: pair.col3 }));
+        })
+        .map((g) => [`${g.pairLabel}::${g.groupLabel}`, g] as [string, typeof g])
+    ).values()
+  );
 
   const [beespectorActiveTab, setBeespectorActiveTab] = useState('performance');
   const [isInitializingBeespector, setIsInitializingBeespector] = useState(false);
@@ -1026,11 +1032,9 @@ const Page: NextPage = () => {
                       <Grid container spacing={2}>
                         {analysisData
                           .filter((s) => s.isSubgroup && s.protectedAttribute === selectedTargetGroup.pairLabel)
-                          .flatMap((s) => {
-                            const grp = (s.perGroupSections ?? []).find((g) => g.groupLabel === selectedTargetGroup.groupLabel);
-                            if (!grp) return [];
-                            return [(
-                              <Grid key="sg-target" xs={12} md={6}>
+                          .flatMap((s) =>
+                            (s.perGroupSections ?? []).map((grp, gi) => (
+                              <Grid key={`sg-${s.classifierName}-${grp.groupLabel}-${gi}`} xs={12} md={6}>
                                 <PerGroupCard
                                   group={grp}
                                   datasetName={selectedDatasets.find((ds) => ds.slug === s.datasetName)?.name}
@@ -1040,8 +1044,8 @@ const Page: NextPage = () => {
                                   mitigatedAccuracy={s.mitigatedAccuracy}
                                 />
                               </Grid>
-                            )];
-                          })}
+                            ))
+                          )}
                       </Grid>
 
                       {/* ── Fairness Spillover Table ─────────────────────────── */}
