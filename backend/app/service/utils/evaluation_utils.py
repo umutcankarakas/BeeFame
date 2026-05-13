@@ -151,23 +151,30 @@ def run_grid_search(X_train_scaled, y_train, s_train, model):
     return mitigator
 
 
-def run_reject_option(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test):
+def run_reject_option(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test, unprivileged_val=None):
     """
     Reject Option Classification (Kamiran et al. 2012): adjusts predictions
     near the decision boundary to favor the unprivileged group.
 
-    Unprivileged group is determined dynamically from training selection rates
-    (the group with the lower positive rate) rather than hardcoding s==0.
+    If unprivileged_val is provided (e.g. 1 when using a binary target-subgroup
+    column), it is used directly. Otherwise the group with the lower positive
+    rate in training data is treated as unprivileged.
     """
     s_tr = s_train.cat.codes.values if hasattr(s_train, "cat") else np.asarray(s_train, dtype=int)
     y_tr = np.asarray(y_train, dtype=int)
-    pos_rates = {
-        g: np.mean(y_tr[s_tr == g] == 1)
-        for g in np.unique(s_tr)
-        if (s_tr == g).sum() > 0
-    }
-    unprivileged_val = min(pos_rates, key=pos_rates.get)
-    privileged_val   = max(pos_rates, key=pos_rates.get)
+
+    if unprivileged_val is not None:
+        unique_vals = np.unique(s_tr)
+        other_vals = [v for v in unique_vals if v != unprivileged_val]
+        privileged_val = other_vals[0] if other_vals else unprivileged_val
+    else:
+        pos_rates = {
+            g: np.mean(y_tr[s_tr == g] == 1)
+            for g in np.unique(s_tr)
+            if (s_tr == g).sum() > 0
+        }
+        unprivileged_val = min(pos_rates, key=pos_rates.get)
+        privileged_val   = max(pos_rates, key=pos_rates.get)
 
     s = s_test.cat.codes.values if hasattr(s_test, "cat") else np.asarray(s_test, dtype=int)
 

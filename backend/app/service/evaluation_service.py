@@ -257,7 +257,9 @@ class EvaluationService:
                                 if method_name == "Equalized Odds Postprocessing":
                                     y_pred = method_func(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test)
                                 else:
-                                    y_pred = method_func(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test)
+                                    # When a binary target subgroup col is used, 1 = unprivileged (user's choice).
+                                    unprivileged_val = 1 if binary_mit_col else None
+                                    y_pred = method_func(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test, unprivileged_val=unprivileged_val)
                             else:
                                 X_train_transformed, y_train_transformed = method_func(X_train, y_train, s_train)
                                 X_train_transformed_scaled = scaler.transform(X_train_transformed)

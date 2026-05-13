@@ -41,14 +41,13 @@ interface PerGroupMetric {
   FPR_div: number | null;
   FNR_div: number | null;
   PPV: number | null;
+  tpr: number | null;
+  fpr: number | null;
   'Subgroup AUC': number | null;
   'BPSN AUC': number | null;
   'BNSP AUC': number | null;
   'Pinned AUC': number | null;
   accuracy: number | null;
-  is_privileged: boolean;
-  privilege_status: 'privileged' | 'unprivileged' | 'neutral';
-  is_worst_case: boolean;
 }
 
 interface BiasAnalysis {
@@ -71,8 +70,6 @@ interface BiasAnalysis {
 interface PerGroupSection {
   groupLabel: string;
   pairLabel: string;
-  privilegedLabel: string;
-  unprivilegedLabel: string;
   subgroupAccuracy: number | null;
   fprDiv: number | null;
   fnrDiv: number | null;
@@ -82,6 +79,8 @@ interface PerGroupSection {
   bpsnAUC: number | null;
   bnspAUC: number | null;
   pinnedAUC: number | null;
+  tpr?: number | null;
+  fpr?: number | null;
   // mitigated counterparts — only set after mitigation step
   mitigatedSubgroupAccuracy?: number | null;
   mitigatedFprDiv?: number | null;
@@ -91,11 +90,13 @@ interface PerGroupSection {
   mitigatedBpsnAUC?: number | null;
   mitigatedBnspAUC?: number | null;
   mitigatedPinnedAUC?: number | null;
+  mitigatedTpr?: number | null;
+  mitigatedFpr?: number | null;
 }
 
 interface BiasSection {
   datasetName?: string; methodName?: string; protectedAttribute: string;
-  classifierName?: string; privilegedGroup: string; unprivilegedGroup: string;
+  classifierName?: string;
   accuracy: number; mitigatedAccuracy?: number; metrics: BiasMetric[];
   biasedMetricsCount?: number; totalMetrics?: number; isSubgroup?: boolean;
   perGroupSections?: PerGroupSection[];
@@ -307,18 +308,16 @@ const toMetrics = (analysis: BiasAnalysis): BiasMetric[] => [
 const toPerGroupSections = (
   perGroupMetrics: Record<string, any>,
   pairLabel: string,
-  privilegedLabel: string,
-  unprivilegedLabel: string,
 ): PerGroupSection[] => {
   return Object.entries(perGroupMetrics).map(([groupLabel, gm]) => ({
     groupLabel,
     pairLabel,
-    privilegedLabel,
-    unprivilegedLabel,
     subgroupAccuracy: gm.accuracy ?? null,
     fprDiv: gm.FPR_div ?? null,
     fnrDiv: gm.FNR_div ?? null,
     ppv: gm.PPV ?? null,
+    tpr: gm.tpr ?? null,
+    fpr: gm.fpr ?? null,
     metrics: [
       { name: 'Statistical Parity Difference (1-m)', value: 1 - (gm.SPD ?? 0) },
       { name: 'Equal Opportunity Difference (1-m)', value: 1 - (gm.EOD ?? 0) },
@@ -338,16 +337,12 @@ const toSubgroupSection = (m: BiasAnalysis, pair?: SubgroupPair): BiasSection =>
   methodName: m['Method Name'],
   protectedAttribute: m['Sensitive Column'],
   classifierName: m['Classifier'] || (m as any)['Model Name'],
-  privilegedGroup: pair?.privileged_label || '',
-  unprivilegedGroup: pair?.unprivileged_label || '',
   accuracy: m['Model Accuracy'] * 100,
   metrics: toMetrics(m),
   isSubgroup: true,
   perGroupSections: m['Per Group Metrics'] ? toPerGroupSections(
     m['Per Group Metrics'],
     m['Sensitive Column'] ?? '',
-    pair?.privileged_label ?? '',
-    pair?.unprivileged_label ?? '',
   ) : undefined,
   subgroupAUC: m['Subgroup AUC'] ?? undefined,
   bpsnAUC: m['BPSN AUC'] ?? undefined,
@@ -482,7 +477,6 @@ const Page: NextPage = () => {
           return {
             datasetName: a?.Dataset, classifierName: a['Classifier'],
             protectedAttribute: a['Sensitive Column'],
-            privilegedGroup: sf?.privileged || '', unprivilegedGroup: sf?.unprivileged || '',
             accuracy: a['Model Accuracy'] * 100, metrics: toMetrics(a), isSubgroup: false,
           };
         });
@@ -556,6 +550,8 @@ const Page: NextPage = () => {
                     mitigatedSubgroupAccuracy: mitigatedGroup.accuracy ?? null,
                     mitigatedFnrDiv: mitigatedGroup.FNR_div ?? null,
                     mitigatedPpv: mitigatedGroup.PPV ?? null,
+                    mitigatedTpr: mitigatedGroup.tpr ?? null,
+                    mitigatedFpr: mitigatedGroup.fpr ?? null,
                     mitigatedSubgroupAUC: mitigatedGroup['Subgroup AUC'] ?? null,
                     mitigatedBpsnAUC: mitigatedGroup['BPSN AUC'] ?? null,
                     mitigatedBnspAUC: mitigatedGroup['BNSP AUC'] ?? null,
@@ -566,7 +562,7 @@ const Page: NextPage = () => {
                     })),
                   };
                 })
-              : toPerGroupSections(mitigatedPerGroup, m['Sensitive Column'] ?? '', pair3?.privileged_label ?? '', pair3?.unprivileged_label ?? '');
+              : toPerGroupSections(mitigatedPerGroup, m['Sensitive Column'] ?? '');
 
             const mitigatedSection = toSubgroupSection(m, pair3);
             return {
@@ -1051,12 +1047,39 @@ const Page: NextPage = () => {
                       {/* ── Fairness Spillover Table ─────────────────────────── */}
                       {selectedTargetGroup && (() => {
                         const allGroups = analysisData
-                          .filter((s) => s.isSubgroup)
+                          .filter((s) => s.isSubgroup && s.protectedAttribute === selectedTargetGroup.pairLabel)
                           .flatMap((s) => (s.perGroupSections ?? []).map((g) => ({ ...g, isTargeted: g.groupLabel === selectedTargetGroup.groupLabel })));
                         if (allGroups.length === 0) return null;
 
-                        const getMetric = (metrics: BiasMetric[], name: string) =>
-                          metrics.find((m) => m.name.includes(name));
+                        const targetGroup = allGroups.find((g) => g.isTargeted);
+
+                        // Derive signed (tpr - overall_tpr) and (fpr - overall_fpr) from stored metrics.
+                        // EOD = sg_tpr - overall_tpr  →  raw EOD = 1 - metric("Equal Opportunity").value
+                        // AOD = (tpr_diff + fpr_diff) / 2  →  fpr_diff = 2*AOD - EOD
+                        // tpr gap vs target = EOD_sg - EOD_target  (overall cancels)
+                        // fpr gap vs target = fpr_diff_sg - fpr_diff_target
+                        const getRawEod = (g: PerGroupSection, mitigated = false): number | null => {
+                          const m = g.metrics.find((x) => x.name.includes('Equal Opportunity'));
+                          if (!m) return null;
+                          const v = mitigated ? m.mitigatedValue : m.value;
+                          return v != null ? 1 - v : null;
+                        };
+                        const getRawAod = (g: PerGroupSection, mitigated = false): number | null => {
+                          const m = g.metrics.find((x) => x.name.includes('Average Odds'));
+                          if (!m) return null;
+                          const v = mitigated ? m.mitigatedValue : m.value;
+                          return v != null ? 1 - v : null;
+                        };
+                        const getFprDiff = (g: PerGroupSection, mitigated = false): number | null => {
+                          const eod = getRawEod(g, mitigated);
+                          const aod = getRawAod(g, mitigated);
+                          return eod != null && aod != null ? 2 * aod - eod : null;
+                        };
+
+                        const tEodBefore = getRawEod(targetGroup!);
+                        const tEodAfter  = getRawEod(targetGroup!, true);
+                        const tFprBefore = getFprDiff(targetGroup!);
+                        const tFprAfter  = getFprDiff(targetGroup!, true);
 
                         const fmtDelta = (before: number | null | undefined, after: number | null | undefined, higherBetter: boolean) => {
                           if (before == null || after == null) return { text: '—', color: 'text.secondary' };
@@ -1082,35 +1105,67 @@ const Page: NextPage = () => {
                             <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>Fairness Spillover Analysis</Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                               Mitigation was optimized for <strong>{selectedTargetGroup.groupLabel}</strong>.
-                              The table shows how all intersectional subgroups were affected —
+                              Metrics show each group's gap relative to the target group —
                               Kearns et al. (2019) show that targeting one subgroup does not guarantee improvement for others.
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic' }}>
+                              Other groups — TPR Gap = |group TPR − target TPR|, FPR Gap = |group FPR − target FPR|: lower = more equal to target.
+                              Target row — shows its own |EOD| and |FPR deviation| vs the overall population: lower = less biased.
+                              Group Acc = accuracy computed only on that group's test samples.
                             </Typography>
                             <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'auto' }}>
                               <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <Box component="thead" sx={{ bgcolor: 'grey.50' }}>
                                   <Box component="tr">
                                     <TH>Subgroup</TH>
-                                    <TH>EOD Before</TH><TH>EOD After</TH><TH>ΔEOD</TH>
-                                    <TH>FPR Div Before</TH><TH>FPR Div After</TH><TH>ΔFPR Div</TH>
+                                    <TH>TPR Gap Before</TH><TH>TPR Gap After</TH><TH>ΔTPR Gap</TH>
+                                    <TH>FPR Gap Before</TH><TH>FPR Gap After</TH><TH>ΔFPR Gap</TH>
+                                    <TH>Group Acc Before</TH><TH>Group Acc After</TH><TH>ΔGroup Acc</TH>
                                   </Box>
                                 </Box>
                                 <Box component="tbody">
                                   {allGroups.map((g, i) => {
-                                    const eodM = getMetric(g.metrics, 'Equal Opportunity');
-                                    const eodDelta = fmtDelta(eodM?.value, eodM?.mitigatedValue, true);
-                                    const fprDelta = fmtDelta(g.fprDiv, g.mitigatedFprDiv, false);
+                                    const gEodBefore = getRawEod(g);
+                                    const gEodAfter  = getRawEod(g, true);
+                                    const gFprBefore = getFprDiff(g);
+                                    const gFprAfter  = getFprDiff(g, true);
+
+                                    const tprBefore = gEodBefore != null && tEodBefore != null ? Math.abs(gEodBefore - tEodBefore) : null;
+                                    const tprAfter  = gEodAfter  != null && tEodAfter  != null ? Math.abs(gEodAfter  - tEodAfter)  : null;
+                                    const fprBefore = gFprBefore != null && tFprBefore != null ? Math.abs(gFprBefore - tFprBefore) : null;
+                                    const fprAfter  = gFprAfter  != null && tFprAfter  != null ? Math.abs(gFprAfter  - tFprAfter)  : null;
+
+                                    const accBefore = g.subgroupAccuracy != null ? g.subgroupAccuracy * 100 : null;
+                                    const accAfter  = g.mitigatedSubgroupAccuracy != null ? g.mitigatedSubgroupAccuracy * 100 : null;
+                                    const accDelta  = fmtDelta(accBefore, accAfter, true);
+
+                                    const isTarget = g.isTargeted;
+
+                                    // Target row: show its own EOD/FPR vs overall (not a gap vs itself).
+                                    // Other rows: show |group_val - target_val| gap.
+                                    const displayTprBefore = isTarget ? (gEodBefore != null ? Math.abs(gEodBefore) : null) : tprBefore;
+                                    const displayTprAfter  = isTarget ? (gEodAfter  != null ? Math.abs(gEodAfter)  : null) : tprAfter;
+                                    const displayFprBefore = isTarget ? (gFprBefore != null ? Math.abs(gFprBefore) : null) : fprBefore;
+                                    const displayFprAfter  = isTarget ? (gFprAfter  != null ? Math.abs(gFprAfter)  : null) : fprAfter;
+
+                                    const tprDelta = fmtDelta(displayTprBefore, displayTprAfter, false);
+                                    const fprDelta = fmtDelta(displayFprBefore, displayFprAfter, false);
+
                                     return (
                                       <Box component="tr" key={i} sx={{ bgcolor: g.isTargeted ? 'rgba(25,118,210,0.07)' : 'transparent' }}>
                                         <TD sx={{ fontWeight: g.isTargeted ? 700 : 400 }}>
                                           {g.groupLabel}
                                           {g.isTargeted && <Chip size="small" label="target" color="primary" sx={{ ml: 1, height: 18, fontSize: 10 }} />}
                                         </TD>
-                                        <TD>{eodM?.value != null ? eodM.value.toFixed(3) : '—'}</TD>
-                                        <TD>{eodM?.mitigatedValue != null ? eodM.mitigatedValue.toFixed(3) : '—'}</TD>
-                                        <TD sx={{ fontWeight: 600, color: eodDelta.color }}>{eodDelta.text}</TD>
-                                        <TD>{g.fprDiv != null ? g.fprDiv.toFixed(3) : '—'}</TD>
-                                        <TD>{g.mitigatedFprDiv != null ? g.mitigatedFprDiv.toFixed(3) : '—'}</TD>
+                                        <TD>{displayTprBefore != null ? displayTprBefore.toFixed(3) : '—'}</TD>
+                                        <TD>{displayTprAfter  != null ? displayTprAfter.toFixed(3)  : '—'}</TD>
+                                        <TD sx={{ fontWeight: 600, color: tprDelta.color }}>{tprDelta.text}</TD>
+                                        <TD>{displayFprBefore != null ? displayFprBefore.toFixed(3) : '—'}</TD>
+                                        <TD>{displayFprAfter  != null ? displayFprAfter.toFixed(3)  : '—'}</TD>
                                         <TD sx={{ fontWeight: 600, color: fprDelta.color }}>{fprDelta.text}</TD>
+                                        <TD>{accBefore != null ? `${accBefore.toFixed(1)}%` : '—'}</TD>
+                                        <TD>{accAfter  != null ? `${accAfter.toFixed(1)}%`  : '—'}</TD>
+                                        <TD sx={{ fontWeight: 600, color: accDelta.color }}>{accDelta.text}</TD>
                                       </Box>
                                     );
                                   })}

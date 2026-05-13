@@ -94,8 +94,6 @@ def calculate_theil_index(y_true, y_pred):
 # Per-group metrics
 # ─────────────────────────────────────────────
 
-NEUTRAL_THRESHOLD = 0.05
-
 def calculate_per_group_metrics(
     y_true,
     y_pred,
@@ -202,14 +200,6 @@ def calculate_per_group_metrics(
 
         sg_accuracy = float(accuracy_score(sg_true, sg_pred)) if len(sg_true) > 0 else None
 
-        bias_score = (spd + eod + aod) / 3
-        if abs(bias_score) <= NEUTRAL_THRESHOLD:
-            privilege_status = "neutral"
-        elif bias_score > NEUTRAL_THRESHOLD:
-            privilege_status = "privileged"
-        else:
-            privilege_status = "unprivileged"
-
         parts = str(group).split("_x_")
         readable = make_readable_group_label(cols, parts) if len(parts) == len(cols) else str(group)
 
@@ -228,27 +218,14 @@ def calculate_per_group_metrics(
             "FPR_div": fpr_div,
             "FNR_div": fnr_div,
             "PPV": ppv,
+            "tpr": sg_tpr,
+            "fpr": sg_fpr,
             "Subgroup AUC": sg_auc,
             "BPSN AUC": bpsn_auc,
             "BNSP AUC": bnsp_auc,
             "Pinned AUC": pinned_auc,
             "accuracy": sg_accuracy,
-            "is_privileged": privilege_status == "privileged",
-            "privilege_status": privilege_status,
-            "is_worst_case": False,
         }
-
-    # Kearns 2018: gamma-Unfairness Certificate — worst-case subgroup
-    # Only unprivileged/neutral groups can be worst case; privileged groups
-    # have advantageous bias, not disadvantageous.
-    if group_weighted_scores:
-        candidate_scores = {
-            k: v for k, v in group_weighted_scores.items()
-            if results[k]["privilege_status"] != "privileged"
-        }
-        pool = candidate_scores if candidate_scores else group_weighted_scores
-        worst = max(pool, key=pool.__getitem__)
-        results[worst]["is_worst_case"] = True
 
     # Lin 2024: Fairness Index — weighted divergence sum for groups with support > 0.1
     fairness_index = float(sum(
