@@ -37,7 +37,7 @@ interface PerGroupMetric {
   EOD: number;
   AOD: number;
   DI: number;
-  Theil: number;
+  'Theil T Group': number;
   FPR_div: number | null;
   FNR_div: number | null;
   PPV: number | null;
@@ -54,7 +54,8 @@ interface BiasAnalysis {
   'Method Name': string; Classifier: string; Dataset: string; 'Dataset Name': string;
   'Sensitive Column': string; 'Model Accuracy': number;
   'Statistical Parity Difference': number | null; 'Equal Opportunity Difference': number | null;
-  'Average Odds Difference': number | null; 'Disparate Impact': number | null; 'Theil Index': number | null;
+  'Average Odds Difference': number | null; 'Disparate Impact': number | null;
+  'Theil T Total': number | null; 'Theil T Between': number | null; 'Theil T Within': number | null;
   'Is Subgroup': boolean;
   'Per Group Metrics': Record<string, PerGroupMetric> | null;
   'Fairness Index': number | null;
@@ -302,7 +303,8 @@ const toMetrics = (analysis: BiasAnalysis): BiasMetric[] => [
   { name: 'Equal Opportunity Difference (1-m)', value: 1 - (analysis['Equal Opportunity Difference'] ?? 0) },
   { name: 'Average Odds Difference (1-m)', value: 1 - (analysis['Average Odds Difference'] ?? 0) },
   { name: 'Disparate Impact', value: symDI(analysis['Disparate Impact']) },
-  { name: 'Theil Index (1-m)', value: 1 - (analysis['Theil Index'] ?? 0) },
+  { name: 'Theil Between (1-m)', value: 1 - (analysis['Theil T Between'] ?? 0) },
+  { name: 'Theil Within (1-m)',  value: 1 - (analysis['Theil T Within'] ?? 0) },
 ];
 
 const toPerGroupSections = (
@@ -323,7 +325,7 @@ const toPerGroupSections = (
       { name: 'Equal Opportunity Difference (1-m)', value: 1 - (gm.EOD ?? 0) },
       { name: 'Average Odds Difference (1-m)', value: 1 - (gm.AOD ?? 0) },
       { name: 'Disparate Impact', value: symDI(gm.DI) },
-      { name: 'Theil Index (1-m)', value: 1 - (gm.Theil ?? 0) },
+      { name: 'Theil T Group (1-m)', value: 1 - (gm['Theil T Group'] ?? 0) },
     ],
     subgroupAUC: gm['Subgroup AUC'] ?? null,
     bpsnAUC: gm['BPSN AUC'] ?? null,
@@ -521,7 +523,8 @@ const Page: NextPage = () => {
               'Equal Opportunity Difference (1-m)': 1 - (m['Equal Opportunity Difference'] ?? 0),
               'Average Odds Difference (1-m)': 1 - (m['Average Odds Difference'] ?? 0),
               'Disparate Impact': symDI(m['Disparate Impact']),
-              'Theil Index (1-m)': 1 - (m['Theil Index'] ?? 0),
+              'Theil Between (1-m)': 1 - (m['Theil T Between'] ?? 0),
+              'Theil Within (1-m)':  1 - (m['Theil T Within'] ?? 0),
             };
             return { ...entry, methodName: m['Method Name'], mitigatedAccuracy: m['Model Accuracy'] * 100, isSubgroup: false, metrics: entry.metrics.map((mt) => ({ ...mt, mitigatedValue: mv[mt.name] })) };
           });
@@ -547,7 +550,7 @@ const Page: NextPage = () => {
                     { name: 'Equal Opportunity Difference (1-m)', value: 1 - (mitigatedGroup.EOD ?? 0) },
                     { name: 'Average Odds Difference (1-m)', value: 1 - (mitigatedGroup.AOD ?? 0) },
                     { name: 'Disparate Impact', value: symDI(mitigatedGroup.DI) },
-                    { name: 'Theil Index (1-m)', value: 1 - (mitigatedGroup.Theil ?? 0) },
+                    { name: 'Theil T Group (1-m)', value: 1 - (mitigatedGroup['Theil T Group'] ?? 0) },
                   ];
                   return {
                     ...baseGroup,

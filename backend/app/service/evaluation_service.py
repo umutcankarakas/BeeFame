@@ -3,7 +3,7 @@ from typing import List, Optional
 from service.utils.dataset_utils import (
     calculate_average_odds_difference, calculate_disparate_impact,
     calculate_equal_opportunity_difference, calculate_statistical_parity_difference,
-    calculate_theil_index,
+    calculate_theil_decomposition,
     create_subgroup_column,
     make_readable_group_label,
     calculate_per_group_metrics,
@@ -300,6 +300,10 @@ class EvaluationService:
                                 y_prob_mit_series = None
                             mitigated_preds_per_col[sensitive_column] = (X_test, y_test, y_pred, y_prob_mit_series)
 
+                            _prob_arr = y_prob_mit_series.values if y_prob_mit_series is not None else np.asarray(y_pred, dtype=float)
+                            _s_arr = np.asarray(s_test, dtype=float)
+                            _T_total, _T_between, _T_within = calculate_theil_decomposition(_prob_arr, _s_arr)
+
                             combination_results.append({
                                 "Sensitive Column": sensitive_columns_display[sensitive_column],
                                 "Dataset Name": dataset_name,
@@ -313,7 +317,9 @@ class EvaluationService:
                                 "Equal Opportunity Difference": calculate_equal_opportunity_difference(X_test, y_test_df, y_pred, sensitive_column),
                                 "Average Odds Difference": calculate_average_odds_difference(X_test, y_test_df, y_pred, sensitive_column),
                                 "Disparate Impact": calculate_disparate_impact(X_test, y_test_df, y_pred, sensitive_column),
-                                "Theil Index": calculate_theil_index(y_test_df, y_pred),
+                                "Theil T Total":   _T_total,
+                                "Theil T Between": _T_between,
+                                "Theil T Within":  _T_within,
                             })
 
                         # ── Subgroup metrikleri (mitigated model predictions kullanılır) ──
@@ -357,7 +363,9 @@ class EvaluationService:
                                     "Equal Opportunity Difference": None,
                                     "Average Odds Difference": None,
                                     "Disparate Impact": None,
-                                    "Theil Index": None,
+                                    "Theil T Total":   None,
+                                    "Theil T Between": None,
+                                    "Theil T Within":  None,
                                 })
 
                         # Cache'e yaz

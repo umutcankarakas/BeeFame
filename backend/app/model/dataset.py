@@ -32,7 +32,9 @@ class DatasetAnalysis(BaseModel):
     equal_opportunity_difference: float
     average_odds_difference: float
     disparate_impact: float
-    theil_index: float
+    theil_t_total: float
+    theil_t_between: float
+    theil_t_within: float
 
 class SubgroupPair(BaseModel):
     col1: str
