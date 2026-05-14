@@ -82,13 +82,41 @@ def calculate_disparate_impact(X, y_true, y_pred, sensitive_column):
     mf = MetricFrame(metrics=sr, y_true=y_true, y_pred=y_pred, sensitive_features=X[sensitive_column])
     return mf.ratio(method='between_groups')
 
-def calculate_theil_index(y_true, y_pred):
-    actual_pos = np.mean(y_true == 1)
-    pred_pos = np.mean(y_pred == 1)
-    epsilon = 1e-10
-    actual_entropy = -(actual_pos * np.log2(actual_pos + epsilon) + (1 - actual_pos) * np.log2(1 - actual_pos + epsilon))
-    pred_entropy = -(pred_pos * np.log2(pred_pos + epsilon) + (1 - pred_pos) * np.log2(1 - pred_pos + epsilon))
-    return pred_entropy - actual_entropy
+def calculate_theil_decomposition(y_prob, sensitive_series):
+    """
+    Theil T decomposition: T_total = T_between + T_within (Shorrocks 1980).
+    x_i = individual predicted probability (Speicher et al. 2018, KDD).
+    Convention: 0 * ln(0) = 0.
+    Returns (T_total, T_between, T_within), all >= 0.
+    """
+    x = np.asarray(y_prob, dtype=float)
+    mu = x.mean()
+    if mu < 1e-10:
+        return 0.0, 0.0, 0.0
+
+    n = len(x)
+    ratio = x / mu
+    with np.errstate(divide='ignore', invalid='ignore'):
+        log_ratio = np.where(x > 0, np.log(ratio), 0.0)
+    T_total = float(np.mean(ratio * log_ratio))
+
+    groups = np.asarray(sensitive_series)
+    T_between, T_within = 0.0, 0.0
+    for g in np.unique(groups):
+        mask = (groups == g)
+        x_g = x[mask]
+        mu_g = x_g.mean()
+        if mu_g < 1e-10:
+            continue
+        weight = (mask.sum() / n) * (mu_g / mu)
+        T_between += weight * np.log(mu_g / mu)
+        ratio_g = x_g / mu_g
+        with np.errstate(divide='ignore', invalid='ignore'):
+            log_ratio_g = np.where(x_g > 0, np.log(ratio_g), 0.0)
+        T_g = float(np.mean(ratio_g * log_ratio_g))
+        T_within += weight * T_g
+
+    return T_total, T_between, T_within
 
 # ─────────────────────────────────────────────
 # Per-group metrics
@@ -149,11 +177,19 @@ def calculate_per_group_metrics(
 
         di = float(sg_sr / (overall_sr + epsilon))
 
-        actual_pos_sg = np.mean(sg_true == 1)
-        pred_pos_sg = np.mean(sg_pred == 1)
-        act_ent = -(actual_pos_sg * np.log2(actual_pos_sg + epsilon) + (1 - actual_pos_sg) * np.log2(1 - actual_pos_sg + epsilon))
-        pred_ent = -(pred_pos_sg * np.log2(pred_pos_sg + epsilon) + (1 - pred_pos_sg) * np.log2(1 - pred_pos_sg + epsilon))
-        theil = float(pred_ent - act_ent)
+        if y_prob is not None:
+            y_prob_arr_full = np.array(y_prob).flatten()
+            x_g = y_prob_arr_full[mask]
+        else:
+            x_g = sg_pred.astype(float)
+        mu_g_theil = x_g.mean()
+        if mu_g_theil > 1e-10:
+            ratio_g = x_g / mu_g_theil
+            with np.errstate(divide='ignore', invalid='ignore'):
+                log_ratio_g = np.where(x_g > 0, np.log(ratio_g), 0.0)
+            theil_tg = float(np.mean(ratio_g * log_ratio_g))
+        else:
+            theil_tg = 0.0
 
         ppv: Optional[float] = None
         try:
@@ -214,7 +250,7 @@ def calculate_per_group_metrics(
             "EOD": eod,
             "AOD": aod,
             "DI": di,
-            "Theil": theil,
+            "Theil T Group": theil_tg,
             "FPR_div": fpr_div,
             "FNR_div": fnr_div,
             "PPV": ppv,
@@ -316,9 +352,20 @@ def initial_dataset_analysis(
             y_pred = model.predict(X_test_scaled)
             accuracy = accuracy_score(y_test, y_pred)
 
+            try:
+                y_prob_raw = model.predict_proba(X_test_scaled)[:, 1]
+                y_prob_series = pd.Series(y_prob_raw, index=y_test.index)
+                has_proba = True
+            except Exception:
+                has_proba = False
+                y_prob_series = None
+
             # Normal sensitive column metrikleri
             for sensitive_column in sensitive_columns:
                 if sensitive_column in X.columns:
+                    s_arr = X_test[sensitive_column].values.astype(float)
+                    prob_arr = y_prob_series.values if has_proba else y_pred.values.astype(float)
+                    T_total, T_between, T_within = calculate_theil_decomposition(prob_arr, s_arr)
                     all_results.append({
                         "Dataset": dataset_name,
                         "Classifier": classifier_name,
@@ -331,19 +378,13 @@ def initial_dataset_analysis(
                         "Equal Opportunity Difference": calculate_equal_opportunity_difference(X_test, y_test, y_pred, sensitive_column),
                         "Average Odds Difference": calculate_average_odds_difference(X_test, y_test, y_pred, sensitive_column),
                         "Disparate Impact": calculate_disparate_impact(X_test, y_test, y_pred, sensitive_column),
-                        "Theil Index": calculate_theil_index(y_test, y_pred),
+                        "Theil T Total":   T_total,
+                        "Theil T Between": T_between,
+                        "Theil T Within":  T_within,
                     })
 
             # Subgroup metrikleri
             if requested_pairs:
-                try:
-                    y_prob = model.predict_proba(X_test_scaled)[:, 1]
-                    y_prob_series = pd.Series(y_prob, index=y_test.index)
-                    has_proba = True
-                except Exception:
-                    has_proba = False
-                    y_prob_series = None
-
                 for pair in requested_pairs:
                     col1 = pair["col1"]
                     col2 = pair["col2"]
@@ -375,7 +416,9 @@ def initial_dataset_analysis(
                         "Equal Opportunity Difference": None,
                         "Average Odds Difference": None,
                         "Disparate Impact": None,
-                        "Theil Index": None,
+                        "Theil T Total":   None,
+                        "Theil T Between": None,
+                        "Theil T Within":  None,
                     })
 
     return all_results

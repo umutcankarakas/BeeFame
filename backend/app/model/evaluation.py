@@ -30,7 +30,9 @@ class EvaluationResult(BaseModel):
     statistical_parity_difference: float
     equal_opportunity_difference: float
     average_odds_difference: float
-    theil_index: float
+    theil_t_total: float
+    theil_t_between: float
+    theil_t_within: float
     is_subgroup: bool = False
     subgroup_auc_metrics: Optional[SubgroupAUCResult] = None
 

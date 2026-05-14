@@ -190,6 +190,10 @@ def run_reject_option(model, X_train_scaled, y_train, s_train, X_test_scaled, s_
 
     y_pred = (proba >= 0.5).astype(int)
     theta = 0.15  # uncertainty band around 0.5
+    uncertain = (proba >= 0.5 - theta) & (proba <= 0.5 + theta)
+    y_pred[uncertain & (s == unprivileged_val)] = 1
+    y_pred[uncertain & (s == privileged_val)] = 0
+    return y_pred
 
     uncertain = (proba >= 0.5 - theta) & (proba <= 0.5 + theta)
     y_pred[uncertain & (s == unprivileged_val)] = 1
@@ -198,7 +202,7 @@ def run_reject_option(model, X_train_scaled, y_train, s_train, X_test_scaled, s_
     return y_pred
 
 
-def run_threshold_optimizer_dp(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test):
+def run_threshold_optimizer_dp(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test, unprivileged_val=None):
     """
     ThresholdOptimizer with Demographic Parity (Hardt et al. 2016): finds group-specific
     thresholds that equalize positive prediction rates across groups. Serves as a
