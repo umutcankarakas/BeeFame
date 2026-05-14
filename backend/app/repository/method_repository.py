@@ -1,4 +1,4 @@
-# app/repository/dataset_repository.py
+# app/repository/method_repository.py
 import json
 from pathlib import Path
 from typing import List, Optional
@@ -17,7 +17,6 @@ class MethodRepository:
         methods = []
         for method in raw_data:
             
-
             method_info = MethodInfo(
                 id=method["id"],
                 name=method["name"],
@@ -25,7 +24,5 @@ class MethodRepository:
                 url=method["url"],
                 description=method["description"],
             )
-
             methods.append(method_info)
-
         return methods

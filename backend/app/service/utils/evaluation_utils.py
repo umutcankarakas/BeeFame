@@ -198,6 +198,30 @@ def run_reject_option(model, X_train_scaled, y_train, s_train, X_test_scaled, s_
     return y_pred
 
 
+def run_threshold_optimizer_dp(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test):
+    """
+    ThresholdOptimizer with Demographic Parity (Hardt et al. 2016): finds group-specific
+    thresholds that equalize positive prediction rates across groups. Serves as a
+    postprocessing counterpart to ExponentiatedGradient + DemographicParity (inprocessing).
+    """
+    from fairlearn.postprocessing import ThresholdOptimizer
+
+    s_tr = s_train.cat.codes.values if hasattr(s_train, "cat") else np.asarray(s_train, dtype=int)
+    s_te = s_test.cat.codes.values if hasattr(s_test, "cat") else np.asarray(s_test, dtype=int)
+
+    model.fit(X_train_scaled, y_train)
+
+    postprocessor = ThresholdOptimizer(
+        estimator=model,
+        constraints="demographic_parity",
+        prefit=True,
+    )
+    postprocessor.fit(X_train_scaled, y_train, sensitive_features=s_tr)
+    y_pred = postprocessor.predict(X_test_scaled, sensitive_features=s_te)
+
+    return np.asarray(y_pred, dtype=int)
+
+
 def run_equalized_odds(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test):
     """
     Equalized Odds Postprocessing (Hardt et al. 2016): uses fairlearn's

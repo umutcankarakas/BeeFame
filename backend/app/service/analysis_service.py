@@ -1,8 +1,10 @@
 # app/service/analysis_service.py
 from collections import defaultdict
 import re
+import time
 from typing import List, Optional
 import json
+import logging
 import unicodedata
 from service.redis_client import get_redis_client
 from model.analysis import ClassifierRequest
@@ -13,11 +15,13 @@ from service.utils.dataset_utils import initial_dataset_analysis
 
 
 class AnalysisService:
+    ANALYSIS_VERSION = "v1"
+
     def __init__(self):
         self.redis_client = get_redis_client()
 
     def _get_cache_key(self, dataset_name: str, classifier_name: str, test_size: float, pairs: Optional[List] = None) -> str:
-        base = f"{self._slugify(dataset_name)}:{self._slugify(classifier_name)}:{test_size:.4f}"
+        base = f"{self.ANALYSIS_VERSION}:{self._slugify(dataset_name)}:{self._slugify(classifier_name)}:{test_size:.4f}"
         if pairs:
             pair_str = "_".join(sorted(f"{p['col1']}-{p['col2']}-{p.get('col3') or ''}" for p in pairs))
             base += f":sg_{pair_str}"
@@ -57,11 +61,16 @@ class AnalysisService:
                     dataset.value, classifier_name, test_size,
                     requested_pairs if requested_pairs else None
                 )
-                cached = self.redis_client.get(cache_key)
-
-                if cached:
-                    results.extend(json.loads(cached))
-                else:
+                try:
+                    raw = self.redis_client.get(cache_key)
+                    if raw:
+                        parsed = json.loads(raw)
+                        data = parsed["data"] if isinstance(parsed, dict) and "data" in parsed else parsed
+                        results.extend(data)
+                    else:
+                        missing_pairs.append((dataset, classifier_request))
+                except Exception as e:
+                    logging.warning(f"Cache read error: {str(e)}")
                     missing_pairs.append((dataset, classifier_request))
 
         if missing_pairs:
@@ -92,7 +101,11 @@ class AnalysisService:
                     dataset, classifier, test_size,
                     requested_pairs if requested_pairs else None
                 )
-                self.redis_client.setex(cache_key, 86400, json.dumps(entries))
+                try:
+                    wrapped = {"_v": self.ANALYSIS_VERSION, "_ts": int(time.time()), "data": entries}
+                    self.redis_client.setex(cache_key, 86400, json.dumps(wrapped))
+                except Exception as e:
+                    logging.warning(f"Cache write error: {str(e)}")
                 results.extend(entries)
 
         return results

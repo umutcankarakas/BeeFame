@@ -19,4 +19,5 @@ class MethodName(Enum):
     GridSearch = "Grid Search"
     RejectOptionClassification = "Reject Option Classification"
     EqualizedOddsPostprocessing = "Equalized Odds Postprocessing"
+    ThresholdOptimizerDP = "Threshold Optimizer DP"
 

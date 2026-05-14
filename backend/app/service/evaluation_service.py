@@ -22,12 +22,14 @@ from .utils.evaluation_utils import (
     run_data_repairer, run_label_flipping, run_prevalence_sampling,
     run_relabeller, run_ftu, run_exponentiated_gradient,
     run_grid_search, run_reject_option, run_equalized_odds,
+    run_threshold_optimizer_dp,
 )
 from ucimlrepo import fetch_ucirepo
 import warnings
 import logging
 import json
 import re
+import time
 import unicodedata
 from service.redis_client import get_redis_client
 
@@ -36,11 +38,23 @@ class EvaluationService:
     def __init__(self):
         self.redis_client = get_redis_client()
 
-    # v3: bumped after adding per-group accuracy to calculate_per_group_metrics
-    CACHE_VERSION = "v3"
+    METHOD_VERSIONS = {
+        "Label Flipping":                "v1",
+        "Data Repairer":                 "v1",
+        "Prevalence Sampling":           "v1",
+        "Relabeller":                    "v1",
+        "Fairness Through Unawareness":  "v1",
+        "Exponentiated Gradient":        "v1",
+        "Grid Search":                   "v1",
+        "Reject Option Classification":  "v1",
+        "Equalized Odds Postprocessing": "v1",
+        "Threshold Optimizer DP":        "v1",
+        "None":                          "v1",
+    }
 
     def _get_cache_key(self, dataset_name: str, classifier_name: str, method_name: str, test_size: float, pairs: Optional[List] = None, target_subgroup=None) -> str:
-        base = f"{self.CACHE_VERSION}:{self._slugify(dataset_name)}:{self._slugify(classifier_name)}:{self._slugify(method_name)}:{test_size:.4f}"
+        version = self.METHOD_VERSIONS.get(method_name, "v1")
+        base = f"{version}:{self._slugify(dataset_name)}:{self._slugify(classifier_name)}:{self._slugify(method_name)}:{test_size:.4f}"
         if pairs:
             pair_str = "_".join(sorted(f"{p['col1']}-{p['col2']}-{p.get('col3') or ''}" for p in pairs))
             base += f":sg_{pair_str}"
@@ -59,10 +73,13 @@ class EvaluationService:
     def _get_cached_result(self, dataset_name: str, classifier_name: str, method_name: str, test_size: float, pairs: Optional[List] = None, target_subgroup=None):
         try:
             cache_key = self._get_cache_key(dataset_name, classifier_name, method_name, test_size, pairs, target_subgroup)
-            cached_data = self.redis_client.get(cache_key)
-            if cached_data:
-                return json.loads(cached_data)
-            return None
+            raw = self.redis_client.get(cache_key)
+            if not raw:
+                return None
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict) and "data" in parsed:
+                return parsed["data"]
+            return parsed
         except Exception as e:
             logging.warning(f"Cache read error: {str(e)}")
             return None
@@ -70,7 +87,9 @@ class EvaluationService:
     def _set_cached_result(self, dataset_name: str, classifier_name: str, method_name: str, test_size: float, result_data: list, pairs: Optional[List] = None, target_subgroup=None):
         try:
             cache_key = self._get_cache_key(dataset_name, classifier_name, method_name, test_size, pairs, target_subgroup)
-            self.redis_client.setex(cache_key, 86400, json.dumps(result_data))
+            version = self.METHOD_VERSIONS.get(method_name, "v1")
+            wrapped = {"_v": version, "_ts": int(time.time()), "data": result_data}
+            self.redis_client.setex(cache_key, 86400, json.dumps(wrapped))
         except Exception as e:
             logging.warning(f"Cache write error: {str(e)}")
 
@@ -106,10 +125,11 @@ class EvaluationService:
                 "Grid Search": run_grid_search,
                 "Reject Option Classification": run_reject_option,
                 "Equalized Odds Postprocessing": run_equalized_odds,
+                "Threshold Optimizer DP": run_threshold_optimizer_dp,
             }
 
             INPROCESSING_METHODS = {"Exponentiated Gradient", "Grid Search"}
-            POSTPROCESSING_METHODS = {"Reject Option Classification", "Equalized Odds Postprocessing"}
+            POSTPROCESSING_METHODS = {"Reject Option Classification", "Equalized Odds Postprocessing", "Threshold Optimizer DP"}
             FTU_METHOD = "Fairness Through Unawareness"
 
             dataset_names = [d.value for d in dataset_list]
