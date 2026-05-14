@@ -54,5 +54,12 @@
     "type": "Postprocessing",
     "url": "https://aif360.readthedocs.io/en/latest/modules/generated/aif360.algorithms.postprocessing.EqOddsPostprocessing.html",
     "description": "Adjusts classifier predictions to satisfy equalized odds by finding optimal group-specific thresholds that equalize true positive and false positive rates across groups (Hardt et al. 2016)."
+  },
+  {
+    "id": 9,
+    "name": "Threshold Optimizer DP",
+    "type": "Postprocessing",
+    "url": "https://fairlearn.org/v0.10/api_reference/generated/fairlearn.postprocessing.ThresholdOptimizer.html",
+    "description": "Adjusts classifier predictions to satisfy Demographic Parity by finding optimal group-specific thresholds that equalize positive prediction rates across groups (Hardt et al. 2016). Postprocessing counterpart to Exponentiated Gradient for direct inprocessing vs. postprocessing comparison."
   }
 ]
