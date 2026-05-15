@@ -547,12 +547,27 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
                 context.mitigated_model = FTUWrapper(ftu_model, sensitive_col)
 
             elif mitigation_key in PREPROCESSING_METHODS:
-                # Standard preprocessing: use sample weighting approach
-                weights = get_mitigation_weights(context.X_train, context.y_train, context.sensitive_feature_actual)
+                # Apply the actual preprocessing method (data repair, resampling, relabeling)
+                from backend.app.service.utils.evaluation_utils import (
+                    run_data_repairer, run_prevalence_sampling, run_relabeller, run_ftu
+                )
+                
+                sensitive_col = context.sensitive_feature_actual
+                s_train = context.X_train[sensitive_col].astype('category') if sensitive_col in context.X_train.columns else pd.Series(np.zeros(len(context.X_train)), index=context.X_train.index).astype('category')
+                
+                if mitigation_key == 'data_repairer':
+                    X_train_mitigated, y_train_mitigated = run_data_repairer(context.X_train, context.y_train, s_train)
+                elif mitigation_key == 'prevalence_sampling':
+                    X_train_mitigated, y_train_mitigated = run_prevalence_sampling(context.X_train, context.y_train, s_train)
+                elif mitigation_key == 'relabeller':
+                    X_train_mitigated, y_train_mitigated = run_relabeller(context.X_train, context.y_train, s_train)
+                else:  # fairness_through_unawareness
+                    X_train_mitigated, y_train_mitigated = run_ftu(context.X_train, context.y_train, s_train, sensitive_column=sensitive_col)
+                
                 context.mitigated_model = train_model(
-                    context.X_train, context.y_train,
+                    X_train_mitigated, y_train_mitigated,
                     request.base_classifier, request.classifier_params,
-                    context.preprocessor, sample_weight=weights
+                    context.preprocessor
                 )
             else:
                 # Unknown method: fallback to sample weighting

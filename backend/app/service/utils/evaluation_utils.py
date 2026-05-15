@@ -50,6 +50,7 @@ def run_data_repairer(X_train, y_train, s_train):
     num_cols = X.select_dtypes(include=np.number).columns.tolist()
 
     for col in num_cols:
+        orig_dtype = X[col].dtype  # Preserve original dtype
         overall_sorted = np.sort(X[col].dropna().values)
         n = len(overall_sorted)
         if n == 0:
@@ -60,6 +61,9 @@ def run_data_repairer(X_train, y_train, s_train):
             vals = X.loc[g_idx, col]
             ranks = vals.rank(pct=True, method="average")
             mapped = np.interp(ranks, np.linspace(0, 1, n), overall_sorted)
+            # Convert back to original dtype if necessary (int, float32, etc.)
+            if np.issubdtype(orig_dtype, np.integer):
+                mapped = np.round(mapped).astype(orig_dtype)
             X.loc[g_idx, col] = mapped
 
     return X, y_train.copy()
