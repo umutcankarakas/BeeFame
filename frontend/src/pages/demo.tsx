@@ -4,26 +4,24 @@ import {
   Paper, Container, CardActionArea, Chip, Link, Stack, Alert, FormControl,
   TextField, CircularProgress, Accordion, AccordionSummary, AccordionDetails,
   Tabs, Tab, Checkbox, FormControlLabel, FormGroup,
+  Tooltip as MuiTooltip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
 } from '@mui/material';
 import Grid from '@mui/material/Unstable_Grid2';
 import {
   ScienceOutlined, DatasetOutlined, CheckCircleOutline, ErrorOutline,
-  ExpandMore as ExpandMoreIcon, WarningAmberOutlined,
+  ExpandMore as ExpandMoreIcon, WarningAmberOutlined, InfoOutlined, OpenInNewOutlined,
 } from '@mui/icons-material';
 import {
   Tooltip, ResponsiveContainer,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend,
 } from 'recharts';
 import { NextPage } from 'next';
+import { useRouter } from 'next/router';
 import { Layout as MarketingLayout } from 'src/layouts/marketing';
 import { Seo } from 'src/components/seo';
 import { api } from 'src/lib/axios';
 import { useBeeFame } from 'src/contexts/BeeFameContext';
-import BeespectorNavbar from 'src/components/beespector/Navbar';
-import DatapointEditor from 'src/components/beespector/DatapointEditor';
-import PerformanceFairness from 'src/components/beespector/PerformanceFairness';
 import DatasetFeaturesPreview from 'src/components/beespector/DatasetFeaturesPreview';
-import { beespectorApi } from 'src/lib/beespectorAxios';
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -116,6 +114,160 @@ interface Mitigation { id: string; name: string; type: string; url: string; desc
 interface SubgroupPair { col1: string; col2: string; col3?: string; label: string; instance_count: number; warning: boolean; privileged_label: string; unprivileged_label: string; }
 interface SubgroupPairsResponse { data: { dataset_slug: string; pairs: SubgroupPair[]; }; }
 
+// ─── Metric Info ─────────────────────────────────────────────────────────────
+
+const METRIC_INFO: Record<string, { formula: string; interpretation: string }> = {
+  'Statistical Parity Difference (1-m)': {
+    formula: '1 − |P(Ŷ=1 | unprivileged) − P(Ŷ=1 | privileged)|',
+    interpretation: 'Higher (→1) is fairer. Measures equal prediction rates across groups. Lower SPD = less disparity.',
+  },
+  'Equal Opportunity Difference (1-m)': {
+    formula: '1 − |TPR(unprivileged) − TPR(privileged)|',
+    interpretation: 'Higher (→1) is fairer. Measures equality of true positive rates (recall) across groups.',
+  },
+  'Average Odds Difference (1-m)': {
+    formula: '1 − |(ΔTPR + ΔFPR) / 2|',
+    interpretation: 'Higher (→1) is fairer. Balances both TPR and FPR parity — a combined equalized-odds criterion.',
+  },
+  'Disparate Impact': {
+    formula: '1 − |DI − 1|  where DI = P(Ŷ=1|unpriv) / P(Ŷ=1|priv)',
+    interpretation: 'Higher (→1) is fairer. DI = 1 is perfectly fair; 0.8–1.2 satisfies the legal "80% rule".',
+  },
+  'Theil Between (1-m)': {
+    formula: '1 − Theil T Between-group entropy component',
+    interpretation: 'Higher (→1) is fairer. Measures inequality in benefit rates between groups (Speicher et al. 2018).',
+  },
+  'Theil Within (1-m)': {
+    formula: '1 − Theil T Within-group entropy component',
+    interpretation: 'Higher (→1) is fairer. Measures benefit inequality within individual groups (Speicher et al. 2018).',
+  },
+  'Subgroup AUC': {
+    formula: 'AUC computed only on samples from this subgroup',
+    interpretation: 'Higher (→1) is better. Low value = model discriminates poorly for this subgroup.',
+  },
+  'BPSN AUC': {
+    formula: 'AUC on Background Positive + Subgroup Negative samples',
+    interpretation: 'Higher (→1) is better. Detects whether background positives are confused with subgroup negatives.',
+  },
+  'BNSP AUC': {
+    formula: 'AUC on Background Negative + Subgroup Positive samples',
+    interpretation: 'Higher (→1) is better. Detects whether subgroup positives are confused with background negatives.',
+  },
+  'Pinned AUC': {
+    formula: 'Weighted average of Subgroup AUC, BPSN AUC, and BNSP AUC',
+    interpretation: 'Higher (→1) is better. Summarizes subgroup performance relative to the overall background model.',
+  },
+  'FPR Div': {
+    formula: 'FPR(subgroup) / FPR(overall)',
+    interpretation: 'Closer to 1 is fairer. Values > 1 = disproportionately high false positive rate for this subgroup.',
+  },
+  'FNR Div': {
+    formula: 'FNR(subgroup) / FNR(overall)',
+    interpretation: 'Closer to 1 is fairer. Values > 1 = disproportionately high false negative rate for this subgroup.',
+  },
+  'PPV': {
+    formula: 'Precision = TP / (TP + FP) for this subgroup',
+    interpretation: 'Higher (→1) is better. Measures how accurate positive predictions are for this subgroup.',
+  },
+  'Theil T Group (1-m)': {
+    formula: '1 − Theil T inequality index for this subgroup',
+    interpretation: 'Higher (→1) is fairer. Measures benefit inequality within this subgroup (Speicher et al. 2018).',
+  },
+};
+
+const MetricLegend = ({ metrics }: { metrics: BiasMetric[] }) => (
+  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 0.5 }}>
+    {metrics.map((m) => {
+      const info = METRIC_INFO[m.name];
+      const chip = (
+        <Chip
+          key={m.name}
+          size="small"
+          label={m.name}
+          icon={<InfoOutlined sx={{ fontSize: '13px !important' }} />}
+          variant="outlined"
+          sx={{ fontSize: 11, cursor: info ? 'help' : 'default', height: 24 }}
+        />
+      );
+      if (!info) return chip;
+      return (
+        <MuiTooltip
+          key={m.name}
+          arrow
+          placement="top"
+          title={
+            <Box sx={{ p: 0.5, maxWidth: 320 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>Formula</Typography>
+              <Typography variant="caption" sx={{ display: 'block', mb: 1, fontFamily: 'monospace' }}>{info.formula}</Typography>
+              <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>Interpretation</Typography>
+              <Typography variant="caption" sx={{ display: 'block' }}>{info.interpretation}</Typography>
+            </Box>
+          }
+        >
+          {chip}
+        </MuiTooltip>
+      );
+    })}
+  </Box>
+);
+
+// ─── Metric Guide ────────────────────────────────────────────────────────────
+
+const REGULAR_METRIC_KEYS = [
+  'Statistical Parity Difference (1-m)',
+  'Equal Opportunity Difference (1-m)',
+  'Average Odds Difference (1-m)',
+  'Disparate Impact',
+  'Theil Between (1-m)',
+  'Theil Within (1-m)',
+];
+
+const SUBGROUP_METRIC_KEYS = [
+  'Statistical Parity Difference (1-m)',
+  'Equal Opportunity Difference (1-m)',
+  'Average Odds Difference (1-m)',
+  'Disparate Impact',
+  'Theil T Group (1-m)',
+  'Subgroup AUC',
+  'BPSN AUC',
+  'BNSP AUC',
+  'Pinned AUC',
+  'FPR Div',
+  'FNR Div',
+  'PPV',
+];
+
+const MetricGuideButton = ({ metricKeys, label = 'Metric Definitions' }: { metricKeys: string[]; label?: string }) => (
+  <MuiTooltip
+    arrow
+    placement="bottom-start"
+    componentsProps={{ tooltip: { sx: { maxWidth: 420, p: 0 } } }}
+    title={
+      <Box sx={{ p: 1.5, maxHeight: 440, overflowY: 'auto' }}>
+        {metricKeys.map((key, idx) => {
+          const info = METRIC_INFO[key];
+          if (!info) return null;
+          return (
+            <Box key={key} sx={{ mb: idx < metricKeys.length - 1 ? 1.5 : 0, pb: idx < metricKeys.length - 1 ? 1.5 : 0, borderBottom: idx < metricKeys.length - 1 ? '1px solid rgba(255,255,255,0.12)' : 'none' }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', color: '#fff', mb: 0.25 }}>{key}</Typography>
+              <Typography variant="caption" sx={{ display: 'block', color: 'rgba(255,255,255,0.65)', fontFamily: 'monospace', mb: 0.25 }}>{info.formula}</Typography>
+              <Typography variant="caption" sx={{ display: 'block', color: 'rgba(255,255,255,0.88)' }}>{info.interpretation}</Typography>
+            </Box>
+          );
+        })}
+      </Box>
+    }
+  >
+    <Chip
+      size="small"
+      icon={<InfoOutlined sx={{ fontSize: '14px !important' }} />}
+      label={label}
+      variant="outlined"
+      sx={{ cursor: 'help', borderColor: 'primary.light', color: 'primary.main', '&:hover': { bgcolor: 'primary.50' } }}
+    />
+  </MuiTooltip>
+);
+
 // ─── Radar Chart ─────────────────────────────────────────────────────────────
 
 const MetricRadarChart = ({ metrics, fixedDomain = false, transformNames = true }: { metrics: BiasMetric[]; fixedDomain?: boolean; transformNames?: boolean }) => {
@@ -168,22 +320,30 @@ const buildSubgroupRadarMetrics = (group: PerGroupSection): BiasMetric[] => [
   ...(group.ppv        != null ? [{ name: 'PPV',           value: group.ppv,        mitigatedValue: group.mitigatedPpv        ?? undefined }] : []),
 ];
 
-const PerGroupCard = ({ group, datasetName, classifierName, methodName, accuracy, mitigatedAccuracy }: {
+const PerGroupCard = ({ group, datasetName, classifierName, methodName, accuracy, mitigatedAccuracy, onDeepDive }: {
   group: PerGroupSection;
   datasetName?: string;
   classifierName?: string;
   methodName?: string;
   accuracy: number;
   mitigatedAccuracy?: number;
+  onDeepDive?: () => void;
 }) => {
   const radarMetrics = buildSubgroupRadarMetrics(group);
   return (
     <Card sx={{ border: '1px solid transparent', borderColor: 'divider', borderRadius: 2, py: 3, px: 2 }}>
-      <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 600, mb: 1 }}>
-        {datasetName}
-        {methodName && <Chip size="small" sx={{ ml: 1 }} label={methodName} />}
-        <Chip size="small" label="Subgroup" color="primary" sx={{ ml: 1 }} />
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+        <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 600 }}>
+          {datasetName}
+          {methodName && <Chip size="small" sx={{ ml: 1 }} label={methodName} />}
+          <Chip size="small" label="Subgroup" color="primary" sx={{ ml: 1 }} />
+        </Typography>
+        {onDeepDive && (
+          <Button size="small" variant="outlined" startIcon={<OpenInNewOutlined />} onClick={onDeepDive} sx={{ ml: 1, whiteSpace: 'nowrap' }}>
+            Deep Dive
+          </Button>
+        )}
+      </Box>
       <Stack spacing={3}>
         <Box>
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
@@ -198,10 +358,9 @@ const PerGroupCard = ({ group, datasetName, classifierName, methodName, accuracy
         </Box>
 
         {(() => {
-          const baseAcc = group.subgroupAccuracy != null ? group.subgroupAccuracy * 100 : accuracy;
-          const mitAcc  = group.mitigatedSubgroupAccuracy != null ? group.mitigatedSubgroupAccuracy * 100
-                        : (group.subgroupAccuracy == null && mitigatedAccuracy !== undefined ? mitigatedAccuracy : undefined);
-          const label   = group.subgroupAccuracy != null ? 'Group Accuracy' : 'Model Accuracy';
+          const baseAcc = accuracy;
+          const mitAcc  = mitigatedAccuracy;
+          const label   = 'Model Accuracy';
           return (
             <Alert
               severity={mitAcc !== undefined ? (mitAcc >= baseAcc ? 'success' : 'warning') : 'info'}
@@ -233,7 +392,7 @@ const PerGroupCard = ({ group, datasetName, classifierName, methodName, accuracy
   );
 };
 
-const SubgroupCard = ({ section, datasetName }: { section: BiasSection; datasetName?: string }) => {
+const SubgroupCard = ({ section, datasetName, onDeepDive }: { section: BiasSection; datasetName?: string; onDeepDive?: () => void }) => {
   if (!section.perGroupSections || section.perGroupSections.length === 0) return null;
 
   return (
@@ -255,6 +414,7 @@ const SubgroupCard = ({ section, datasetName }: { section: BiasSection; datasetN
             methodName={section.methodName}
             accuracy={section.accuracy}
             mitigatedAccuracy={section.mitigatedAccuracy}
+            onDeepDive={onDeepDive}
           />
         </Grid>
       ))}
@@ -403,32 +563,10 @@ const Page: NextPage = () => {
     ).values()
   );
 
-  const [beespectorActiveTab, setBeespectorActiveTab] = useState('performance');
-  const [isInitializingBeespector, setIsInitializingBeespector] = useState(false);
-  const [beespectorInitError, setBeespectorInitError] = useState<string | null>(null);
-  const [beespectorContextInfo, setBeespectorContextInfo] = useState<any>(null);
+  const [showSubgroupWarning, setShowSubgroupWarning] = useState(false);
 
+  const router = useRouter();
   const { setSelectedDatasets: setCtxDatasets, setSelectedClassifiers: setCtxClassifiers, setSelectedMitigations: setCtxMitigations, setAnalysisData: setCtxAnalysis, setClassifierParams: setCtxParams } = useBeeFame();
-
-  useEffect(() => {
-    if (activeStep === 4) { setBeespectorActiveTab('performance'); initializeBeespector(); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStep]);
-
-  const initializeBeespector = async () => {
-    if (!selectedDatasets.length || !selectedClassifiers.length) return;
-    setIsInitializingBeespector(true); setBeespectorInitError(null); setBeespectorContextInfo(null);
-    try {
-      const ds = selectedDatasets[0]; const cl = selectedClassifiers[0];
-      const mitigation = selectedMitigations[0] || 'None';
-      let sfName = ds.sensitive_features[0].name.toLowerCase();
-      if (sfName === 'gender') sfName = 'sex';
-      const clSlug = cl.name.toLowerCase().replace(/\s+/g, '_').replace('_(svc)', '').replace('_classifier', '');
-      const res = await beespectorApi.post('/initialize_context', { dataset_name: ds.slug, base_classifier: clSlug, classifier_params: classifierParams[cl.id] || {}, mitigation_method: mitigation.toLowerCase().replace(/\s+/g, '_'), sensitive_feature: sfName });
-      setBeespectorContextInfo(res.data);
-    } catch (e: any) { setBeespectorInitError(e.response?.data?.detail || e.message || 'Unknown error'); }
-    finally { setIsInitializingBeespector(false); }
-  };
 
   useEffect(() => {
     setFeatureAccordionDatasetIdx(0);
@@ -459,7 +597,7 @@ const Page: NextPage = () => {
     fetch();
   }, []);
 
-  const steps = ['Select Dataset & Classifier', 'Check Bias Metrics', 'Select Mitigation', 'Review Results', 'Deep Dive'];
+  const steps = ['Select Dataset & Classifier', 'Check Bias Metrics', 'Select Mitigation', 'Review Results'];
 
   const subgroupPairsPayload = selectedSubgroupPairs.length > 0
     ? selectedSubgroupPairs.map((p) => ({ col1: p.col1, col2: p.col2, col3: p.col3 ?? null, label: p.label }))
@@ -814,7 +952,10 @@ const Page: NextPage = () => {
                 </Box>
               ) : analysisError ? <Alert severity="error">{analysisError}</Alert> : (
                 <>
-                  <Typography variant="h5" sx={{ fontWeight: 600 }}>Check bias metrics</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Typography variant="h5" sx={{ fontWeight: 600 }}>Check bias metrics</Typography>
+                    <MetricGuideButton metricKeys={REGULAR_METRIC_KEYS} label="Metric Definitions" />
+                  </Box>
                   <Grid container spacing={2}>
                     {analysisData.filter((s) => !s.isSubgroup).map((section, i) => (
                       <Grid key={i} xs={6}>
@@ -836,7 +977,10 @@ const Page: NextPage = () => {
                   </Grid>
                   {analysisData.filter((s) => s.isSubgroup).length > 0 && (
                     <>
-                      <Typography variant="h6" sx={{ fontWeight: 600, mt: 2, mb: 1 }}>Intersectional Subgroup Analysis</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2, mb: 1 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>Intersectional Subgroup Analysis</Typography>
+                        <MetricGuideButton metricKeys={SUBGROUP_METRIC_KEYS} label="Subgroup Metric Definitions" />
+                      </Box>
                       <Grid container spacing={2}>
                         {analysisData.filter((s) => s.isSubgroup).map((s, i) => (
                           <SubgroupCard key={`sg-${i}`} section={s} datasetName={selectedDatasets.find((ds) => ds.slug === s.datasetName)?.name} />
@@ -895,19 +1039,19 @@ const Page: NextPage = () => {
                     </Paper>
                   </FormControl>
                 )}
-              {/* Target group selection — required when subgroups were analyzed */}
+              {/* Target group selection — optional */}
               {(() => {
                 if (mitigationTargetGroups.length === 0) return null;
                 return (
                   <Box>
                     <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, color: 'primary.main' }}>
-                      Select an unprivileged group to analyze
+                      Select an unprivileged group to analyze <Typography component="span" variant="body2" color="text.secondary">(optional)</Typography>
                     </Typography>
                     <Typography color="text.secondary" sx={{ mb: 2 }}>
-                      Select the intersectional subgroup you want to treat as the unprivileged group.
+                      Optionally select the intersectional subgroup you want to treat as the unprivileged group.
                       The mitigation algorithm will use a binary sensitive attribute (1&nbsp;=&nbsp;this group,
                       0&nbsp;=&nbsp;all others) to specifically improve fairness for the chosen group —
-                      consistent with Kearns et al. (2019).
+                      consistent with Kearns et al. (2019). If skipped, no subgroup-specific analysis will be shown.
                     </Typography>
                     <Stack spacing={1.5}>
                       {mitigationTargetGroups.map((g, i) => {
@@ -916,7 +1060,7 @@ const Page: NextPage = () => {
                           <Paper
                             key={i}
                             elevation={0}
-                            onClick={() => setSelectedTargetGroup(g)}
+                            onClick={() => setSelectedTargetGroup(isSelected ? null : g)}
                             sx={{
                               p: 2, borderRadius: 2, border: '1px solid', cursor: 'pointer',
                               borderColor: isSelected ? 'primary.main' : 'divider',
@@ -935,11 +1079,6 @@ const Page: NextPage = () => {
                         );
                       })}
                     </Stack>
-                    {!selectedTargetGroup && (
-                      <Alert severity="warning" sx={{ mt: 2 }}>
-                        Please select a target subgroup to proceed.
-                      </Alert>
-                    )}
                   </Box>
                 );
               })()}
@@ -948,7 +1087,10 @@ const Page: NextPage = () => {
 
           case 3: return (
             <Stack spacing={4}>
-              <Typography variant="h5" sx={{ fontWeight: 600 }}>Review Mitigation Results</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="h5" sx={{ fontWeight: 600 }}>Review Mitigation Results</Typography>
+                <MetricGuideButton metricKeys={REGULAR_METRIC_KEYS} label="Metric Definitions" />
+              </Box>
               {analysisLoading ? (
                 <Box sx={{ minHeight: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
                   <CircularProgress size={48} />
@@ -957,19 +1099,21 @@ const Page: NextPage = () => {
                 </Box>
               ) : analysisError ? <Alert severity="error">{analysisError}</Alert> : (
                 <>
-                  {(selectedDatasets.length > 1 || selectedClassifiers.length > 1 || selectedMitigations.length > 1) && (
-                    <Alert severity="info" sx={{ mb: 2 }}>The Deep Dive step requires exactly one dataset, one classifier, and one mitigation to be selected.</Alert>
-                  )}
                   <Grid container spacing={2}>
                     {analysisData.filter((s) => !s.isSubgroup).map((section, i) => (
                       <Grid xs={6} key={i}>
                         <Card sx={{ border: '1px solid transparent', borderColor: 'divider', borderRadius: 2, py: 3, px: 2 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                            <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 600 }}>
+                              {selectedDatasets.find((ds) => ds.slug === section.datasetName)?.name}{' '}
+                              <Chip size="small" sx={{ ml: 1 }} label={section.methodName} />
+                            </Typography>
+                            <Button size="small" variant="outlined" startIcon={<OpenInNewOutlined />} onClick={() => router.push('/beespector')} sx={{ ml: 1, whiteSpace: 'nowrap' }}>
+                              Deep Dive
+                            </Button>
+                          </Box>
                           <Stack spacing={3}>
                             <Box>
-                              <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 600, mb: 1 }}>
-                                {selectedDatasets.find((ds) => ds.slug === section.datasetName)?.name}{' '}
-                                <Chip size="small" sx={{ ml: 1 }} label={section.methodName} />
-                              </Typography>
                               <Grid container spacing={2}>
                                 <Grid xs={12} sm={6}><Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>Protected Attribute: {section.protectedAttribute}</Typography></Grid>
                                 <Grid xs={12} sm={6}><Typography variant="body2" color="text.secondary" sx={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}><strong>Classifier:</strong> {section.classifierName}</Typography></Grid>
@@ -1029,25 +1173,31 @@ const Page: NextPage = () => {
 
                   {analysisData.filter((s) => s.isSubgroup).length > 0 && selectedTargetGroup && (
                     <>
-                      <Typography variant="h6" sx={{ fontWeight: 600, mt: 2, mb: 1 }}>
-                        Selected Unprivileged Group: <strong>{selectedTargetGroup.groupLabel}</strong>
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2, mb: 1 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                          Selected Unprivileged Group: <strong>{selectedTargetGroup.groupLabel}</strong>
+                        </Typography>
+                        <MetricGuideButton metricKeys={SUBGROUP_METRIC_KEYS} label="Subgroup Metric Definitions" />
+                      </Box>
                       <Grid container spacing={2}>
                         {analysisData
                           .filter((s) => s.isSubgroup && s.protectedAttribute === selectedTargetGroup.pairLabel)
                           .flatMap((s) =>
-                            (s.perGroupSections ?? []).map((grp, gi) => (
-                              <Grid key={`sg-${s.classifierName}-${grp.groupLabel}-${gi}`} xs={12} md={6}>
-                                <PerGroupCard
-                                  group={grp}
-                                  datasetName={selectedDatasets.find((ds) => ds.slug === s.datasetName)?.name}
-                                  classifierName={s.classifierName}
-                                  methodName={s.methodName}
-                                  accuracy={s.accuracy}
-                                  mitigatedAccuracy={s.mitigatedAccuracy}
-                                />
-                              </Grid>
-                            ))
+                            (s.perGroupSections ?? [])
+                              .filter((grp) => grp.groupLabel === selectedTargetGroup.groupLabel)
+                              .map((grp, gi) => (
+                                <Grid key={`sg-${s.classifierName}-${grp.groupLabel}-${gi}`} xs={12} md={6}>
+                                  <PerGroupCard
+                                    group={grp}
+                                    datasetName={selectedDatasets.find((ds) => ds.slug === s.datasetName)?.name}
+                                    classifierName={s.classifierName}
+                                    methodName={s.methodName}
+                                    accuracy={s.accuracy}
+                                    mitigatedAccuracy={s.mitigatedAccuracy}
+                                    onDeepDive={() => setShowSubgroupWarning(true)}
+                                  />
+                                </Grid>
+                              ))
                           )}
                       </Grid>
 
@@ -1125,9 +1275,9 @@ const Page: NextPage = () => {
                                 <Box component="thead" sx={{ bgcolor: 'grey.50' }}>
                                   <Box component="tr">
                                     <TH>Subgroup</TH>
-                                    <TH>TPR Gap Before</TH><TH>TPR Gap After</TH><TH>ΔTPR Gap</TH>
-                                    <TH>FPR Gap Before</TH><TH>FPR Gap After</TH><TH>ΔFPR Gap</TH>
-                                    <TH>Group Acc Before</TH><TH>Group Acc After</TH><TH>ΔGroup Acc</TH>
+                                    <TH>TPR Gap (Before)</TH><TH>TPR Gap (After)</TH><TH>ΔTPR Gap</TH>
+                                    <TH>FPR Gap (Before)</TH><TH>FPR Gap (After)</TH><TH>ΔFPR Gap</TH>
+                                    <TH>Group Acc (Before)</TH><TH>Group Acc (After)</TH><TH>ΔGroup Acc</TH>
                                   </Box>
                                 </Box>
                                 <Box component="tbody">
@@ -1189,38 +1339,6 @@ const Page: NextPage = () => {
             </Stack>
           );
 
-          case 4: return (
-            <Box>
-              {beespectorContextInfo && (
-                <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap', gap: 1 }}>
-                  {selectedDatasets[0] && <Chip label={`Dataset: ${selectedDatasets[0].name}`} size="small" variant="outlined" color="primary" />}
-                  {selectedClassifiers[0] && <Chip label={`Classifier: ${selectedClassifiers[0].name}`} size="small" variant="outlined" color="primary" />}
-                  {selectedMitigations[0] && <Chip label={`Mitigation: ${selectedMitigations[0]}`} size="small" variant="outlined" color="primary" />}
-                </Stack>
-              )}
-              {isInitializingBeespector ? (
-                <Box sx={{ minHeight: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, textAlign: 'center' }}>
-                  <CircularProgress size={48} />
-                  <Typography variant="h6" color="text.secondary">Initializing Deep Dive…</Typography>
-                  <Typography variant="body2" color="text.secondary">Training the model with your selections. This may take up to a minute.</Typography>
-                </Box>
-              ) : beespectorInitError ? (
-                <Box sx={{ py: 2 }}>
-                  <Alert severity="error" sx={{ mb: 2 }}>{beespectorInitError}</Alert>
-                  <Button variant="outlined" onClick={initializeBeespector}>Retry</Button>
-                </Box>
-              ) : (
-                <>
-                  <BeespectorNavbar activeTab={beespectorActiveTab} onChangeTab={setBeespectorActiveTab} tabs={[{ id: 'performance', label: 'Performance & Fairness' }, { id: 'datapoint', label: 'Datapoint Editor' }]} />
-                  <Box sx={{ mt: 3, minHeight: 600 }}>
-                    {beespectorActiveTab === 'performance' && <PerformanceFairness />}
-                    {beespectorActiveTab === 'datapoint' && <DatapointEditor />}
-                  </Box>
-                </>
-              )}
-            </Box>
-          );
-
           default: return null;
         }
       })()}
@@ -1247,9 +1365,7 @@ const Page: NextPage = () => {
                   disabled={
                     analysisLoading ||
                     (activeStep === 0 && (selectedDatasets.length === 0 || selectedClassifiers.length === 0)) ||
-                    (activeStep === 2 && selectedMitigations.length === 0) ||
-                    (activeStep === 2 && mitigationTargetGroups.length > 0 && !selectedTargetGroup) ||
-                    (activeStep === 3 && (selectedDatasets.length !== 1 || selectedClassifiers.length !== 1 || selectedMitigations.length !== 1))
+                    (activeStep === 2 && selectedMitigations.length === 0)
                   }
                 >
                   Next
@@ -1259,6 +1375,18 @@ const Page: NextPage = () => {
           </Paper>
         </Container>
       </Box>
+
+      <Dialog open={showSubgroupWarning} onClose={() => setShowSubgroupWarning(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Not Yet Supported</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            BeeSpector Deep Dive is not yet available for subgroup analyses. This feature will be added in a future release.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowSubgroupWarning(false)} variant="contained">OK</Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };

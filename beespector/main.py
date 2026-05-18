@@ -25,6 +25,104 @@ from sklearn.impute import SimpleImputer
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --- Preprocessing helpers (inlined to avoid backend package dependency) ---
+
+def run_data_repairer(X_train, y_train, s_train):
+    """Rank-based data repair: align numerical distributions across groups (Feldman et al. 2015)."""
+    X = X_train.copy()
+    s = s_train.cat.codes if hasattr(s_train, "cat") else s_train.astype(int)
+    num_cols = X.select_dtypes(include=np.number).columns.tolist()
+    for col in num_cols:
+        orig_dtype = X[col].dtype
+        overall_sorted = np.sort(X[col].dropna().values)
+        n = len(overall_sorted)
+        if n == 0:
+            continue
+        for g in s.unique():
+            g_idx = X.index[s == g]
+            vals = X.loc[g_idx, col]
+            ranks = vals.rank(pct=True, method="average")
+            mapped = np.interp(ranks, np.linspace(0, 1, n), overall_sorted)
+            if np.issubdtype(orig_dtype, np.integer):
+                mapped = np.round(mapped).astype(orig_dtype)
+            X.loc[g_idx, col] = mapped
+    return X, y_train.copy()
+
+
+def run_prevalence_sampling(X_train, y_train, s_train):
+    """Resample so positive rate equals overall rate within each group."""
+    X = X_train.copy()
+    y = y_train.copy()
+    s = s_train.cat.codes if hasattr(s_train, "cat") else s_train.astype(int)
+    overall_pos_rate = float(y.mean())
+    rng = np.random.default_rng(42)
+    keep = []
+    for g in s.unique():
+        g_mask = (s == g).values
+        g_positions = np.where(g_mask)[0]
+        g_labels = y.iloc[g_positions].values
+        pos_positions = g_positions[g_labels == 1]
+        neg_positions = g_positions[g_labels == 0]
+        n_total = len(g_positions)
+        n_pos_target = int(round(n_total * overall_pos_rate))
+        n_neg_target = n_total - n_pos_target
+        sampled_pos = rng.choice(pos_positions, size=min(n_pos_target, len(pos_positions)), replace=False)
+        sampled_neg = rng.choice(neg_positions, size=min(n_neg_target, len(neg_positions)), replace=False)
+        keep.extend(sampled_pos.tolist())
+        keep.extend(sampled_neg.tolist())
+    keep = sorted(keep)
+    return X.iloc[keep].reset_index(drop=True), y.iloc[keep].reset_index(drop=True)
+
+
+def run_relabeller(X_train, y_train, s_train):
+    """
+    Relabelling (Kamiran & Calders 2012): rank instances by classifier score,
+    then flip borderline labels to equalise positive rates across groups.
+    Implemented without themis_ml using a logistic regression ranker.
+    """
+    from sklearn.preprocessing import LabelEncoder as _LE
+    X = X_train.copy()
+    y = y_train.copy()
+    s = s_train.cat.codes if hasattr(s_train, "cat") else s_train.astype(int)
+
+    X_enc = X.copy()
+    for col in X_enc.select_dtypes(include=["object", "category"]).columns:
+        X_enc[col] = _LE().fit_transform(X_enc[col].astype(str))
+    X_enc = X_enc.fillna(0)
+
+    ranker = LogisticRegression(max_iter=300, random_state=42, solver="lbfgs")
+    ranker.fit(X_enc, y)
+    scores = pd.Series(ranker.predict_proba(X_enc)[:, 1], index=X_enc.index)
+
+    overall_pos_rate = float(y.mean())
+    for g in s.unique():
+        g_mask = (s == g)
+        group_pos_rate = float(y[g_mask].mean())
+        if group_pos_rate > overall_pos_rate + 1e-6:
+            pos_idx = y.index[g_mask & (y == 1)]
+            n_flip = int(round(len(pos_idx) * (1 - overall_pos_rate / group_pos_rate)))
+            n_flip = min(n_flip, len(pos_idx))
+            if n_flip > 0:
+                flip_idx = scores.loc[pos_idx].nsmallest(n_flip).index
+                y.loc[flip_idx] = 0
+        elif group_pos_rate < overall_pos_rate - 1e-6:
+            neg_idx = y.index[g_mask & (y == 0)]
+            n_flip = int(round(len(neg_idx) * (overall_pos_rate - group_pos_rate) / (1 - group_pos_rate + 1e-9)))
+            n_flip = min(n_flip, len(neg_idx))
+            if n_flip > 0:
+                flip_idx = scores.loc[neg_idx].nlargest(n_flip).index
+                y.loc[flip_idx] = 1
+    return X_train, y
+
+
+def run_ftu(X_train, y_train, s_train, sensitive_column=None):
+    """Fairness Through Unawareness: drop the sensitive column from features."""
+    X = X_train.copy()
+    if sensitive_column and sensitive_column in X.columns:
+        X = X.drop(columns=[sensitive_column])
+    return X, y_train.copy()
+
+
 # --- Pydantic Models ---
 class InitializeContextRequest(BaseModel):
     dataset_name: str
@@ -547,11 +645,6 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
                 context.mitigated_model = FTUWrapper(ftu_model, sensitive_col)
 
             elif mitigation_key in PREPROCESSING_METHODS:
-                # Apply the actual preprocessing method (data repair, resampling, relabeling)
-                from backend.app.service.utils.evaluation_utils import (
-                    run_data_repairer, run_prevalence_sampling, run_relabeller, run_ftu
-                )
-                
                 sensitive_col = context.sensitive_feature_actual
                 s_train = context.X_train[sensitive_col].astype('category') if sensitive_col in context.X_train.columns else pd.Series(np.zeros(len(context.X_train)), index=context.X_train.index).astype('category')
                 
