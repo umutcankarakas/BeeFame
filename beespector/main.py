@@ -143,7 +143,14 @@ def load_dataset(dataset_name: str) -> pd.DataFrame:
                 logger.info(f"{col} mapped successfully")
         
         logger.info(f"German dataset categorical encoding completed")
-    
+
+        # attribute9 ("Personal Status & Sex") combines marital status and sex.
+        # Derive a standalone binary sex column so it can be used as a sensitive feature.
+        if 'attribute9' in df.columns:
+            df['sex'] = df['attribute9'].map({
+                'A91': 'Male', 'A92': 'Female', 'A93': 'Male', 'A94': 'Male', 'A95': 'Female',
+            })
+
     df = df.dropna(subset=['target'])
     df.reset_index(drop=True, inplace=True)
     df['id'] = df.index
