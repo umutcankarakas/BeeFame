@@ -709,6 +709,8 @@ const Page: NextPage = () => {
   const [isInitializingBeespector, setIsInitializingBeespector] = useState(false);
   const [beespectorInitError, setBeespectorInitError] = useState<string | null>(null);
   const [beespectorContextInfo, setBeespectorContextInfo] = useState<any>(null);
+  // Which Review Results card the user picked to carry into Deep Dive
+  const [selectedDeepDiveIndex, setSelectedDeepDiveIndex] = useState<number | null>(null);
 
   const {
     setSelectedDatasets: setContextDatasets,
@@ -728,26 +730,31 @@ const Page: NextPage = () => {
   }, [activeStep]);
 
   const initializeBeespector = async () => {
-    if (selectedDatasets.length === 0 || selectedClassifiers.length === 0) return;
+    const section =
+      selectedDeepDiveIndex !== null ? analysisData[selectedDeepDiveIndex] : null;
+    if (!section) {
+      setBeespectorInitError(
+        'No result selected. Please go back to Review Results and select a result card.'
+      );
+      return;
+    }
     setIsInitializingBeespector(true);
     setBeespectorInitError(null);
     setBeespectorContextInfo(null);
     try {
-      const dataset = selectedDatasets[0];
-      const classifier = selectedClassifiers[0];
-      const mitigation = selectedMitigations.length > 0 ? selectedMitigations[0] : 'None';
-      const sensitiveFeatureConfig = dataset.sensitive_features[0];
-      let sensitiveFeatureName = sensitiveFeatureConfig.name.toLowerCase();
+      const classifier = selectedClassifiers.find((c) => c.name === section.classifierName);
+      const mitigation = section.methodName || 'None';
+      let sensitiveFeatureName = section.protectedAttribute.toLowerCase();
       if (sensitiveFeatureName === 'gender') sensitiveFeatureName = 'sex';
-      const classifierSlug = classifier.name
+      const classifierSlug = (section.classifierName || '')
         .toLowerCase()
         .replace(/\s+/g, '_')
         .replace('_(svc)', '')
         .replace('_classifier', '');
       const initParams = {
-        dataset_name: dataset.slug,
+        dataset_name: section.datasetName,
         base_classifier: classifierSlug,
-        classifier_params: classifierParams[classifier.id] || {},
+        classifier_params: classifier ? classifierParams[classifier.id] || {} : {},
         mitigation_method: mitigation.toLowerCase().replace(/\s+/g, '_'),
         sensitive_feature: sensitiveFeatureName,
       };
@@ -799,11 +806,15 @@ const Page: NextPage = () => {
     'Deep Dive',
   ];
 
+  const selectedDeepDiveSection =
+    selectedDeepDiveIndex !== null ? analysisData[selectedDeepDiveIndex] : null;
+
   const handleNext = async () => {
     if (activeStep === 0 && selectedDatasets.length > 0 && selectedClassifiers.length > 0) {
       setActiveStep((prevStep) => prevStep + 1);
       setAnalysisLoading(true);
       setAnalysisError(null);
+      setSelectedDeepDiveIndex(null);
       try {
         const response = await api.post<AnalysisResponse>('/analysis', {
           dataset_names: selectedDatasets.map((dataset) => dataset.slug),
@@ -863,7 +874,7 @@ const Page: NextPage = () => {
       setActiveStep((prevStep) => prevStep + 1);
       setAnalysisLoading(true);
       setAnalysisError(null);
-      /* console.log('analysis data : ', analysisData); */
+      setSelectedDeepDiveIndex(null);
       try {
         const response = await api.post<AnalysisResponse>('/evaluation', {
           dataset_names: selectedDatasets.map((dataset) => dataset.slug),
@@ -2125,18 +2136,14 @@ const Page: NextPage = () => {
                     <Alert severity="error">{analysisError}</Alert>
                   ) : (
                     <>
-                      {(selectedDatasets.length > 1 ||
-                        selectedClassifiers.length > 1 ||
-                        selectedMitigations.length > 1) && (
-                        <Alert
-                          severity="info"
-                          sx={{ mb: 2 }}
-                        >
-                          The Deep Dive step requires exactly one dataset, one classifier, and one
-                          mitigation to be selected. Please go back and adjust your selections before
-                          continuing.
-                        </Alert>
-                      )}
+                      <Alert
+                        severity="info"
+                        sx={{ mb: 2 }}
+                      >
+                        Select a result card below to deep dive into that specific dataset ×
+                        classifier × mitigation × protected attribute combination. Each card is
+                        backed by its own trained model.
+                      </Alert>
                       <Grid
                         container
                         spacing={2}
@@ -2147,14 +2154,32 @@ const Page: NextPage = () => {
                             key={index}
                           >
                             <Card
+                              onClick={() => setSelectedDeepDiveIndex(index)}
                               sx={{
-                                border: '1px solid transparent',
-                                borderColor: 'divider',
+                                cursor: 'pointer',
+                                borderWidth: 2,
+                                borderStyle: 'solid',
+                                borderColor:
+                                  selectedDeepDiveIndex === index ? 'primary.main' : 'divider',
                                 borderRadius: 2,
                                 py: 3,
                                 px: 2,
+                                position: 'relative',
+                                transition: 'all 0.2s ease-in-out',
+                                '&:hover': { borderColor: 'primary.main' },
                               }}
                             >
+                              {selectedDeepDiveIndex === index && (
+                                <CheckCircleOutline
+                                  sx={{
+                                    position: 'absolute',
+                                    top: 12,
+                                    right: 12,
+                                    color: 'primary.main',
+                                    fontSize: 24,
+                                  }}
+                                />
+                              )}
                               <Stack spacing={3}>
                                 <Box>
                                   <Typography
@@ -2336,36 +2361,42 @@ const Page: NextPage = () => {
               return (
                 <Box>
                   {/* Context info chips */}
-                  {beespectorContextInfo && (
+                  {beespectorContextInfo && selectedDeepDiveSection && (
                     <Stack
                       direction="row"
                       spacing={1}
                       sx={{ mb: 2, flexWrap: 'wrap', gap: 1 }}
                     >
-                      {selectedDatasets[0] && (
+                      <Chip
+                        label={`Dataset: ${
+                          selectedDatasets.find(
+                            (d) => d.slug === selectedDeepDiveSection.datasetName
+                          )?.name || selectedDeepDiveSection.datasetName
+                        }`}
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                      />
+                      <Chip
+                        label={`Classifier: ${selectedDeepDiveSection.classifierName}`}
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                      />
+                      {selectedDeepDiveSection.methodName && (
                         <Chip
-                          label={`Dataset: ${selectedDatasets[0].name}`}
+                          label={`Mitigation: ${selectedDeepDiveSection.methodName}`}
                           size="small"
                           variant="outlined"
                           color="primary"
                         />
                       )}
-                      {selectedClassifiers[0] && (
-                        <Chip
-                          label={`Classifier: ${selectedClassifiers[0].name}`}
-                          size="small"
-                          variant="outlined"
-                          color="primary"
-                        />
-                      )}
-                      {selectedMitigations[0] && (
-                        <Chip
-                          label={`Mitigation: ${selectedMitigations[0]}`}
-                          size="small"
-                          variant="outlined"
-                          color="primary"
-                        />
-                      )}
+                      <Chip
+                        label={`Protected Attribute: ${selectedDeepDiveSection.protectedAttribute}`}
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                      />
                     </Stack>
                   )}
 
@@ -2499,10 +2530,7 @@ const Page: NextPage = () => {
                     (activeStep === 0 &&
                       (selectedDatasets.length === 0 || selectedClassifiers.length === 0)) ||
                     (activeStep === 2 && selectedMitigations.length === 0) ||
-                    (activeStep === 3 &&
-                      (selectedDatasets.length !== 1 ||
-                        selectedClassifiers.length !== 1 ||
-                        selectedMitigations.length !== 1))
+                    (activeStep === 3 && selectedDeepDiveIndex === null)
                   }
                   size="large"
                 >
