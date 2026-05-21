@@ -19,6 +19,7 @@ from sklearn.svm import SVC
 from xgboost import XGBClassifier
 from sklearn.metrics import roc_curve, precision_recall_curve, confusion_matrix, roc_auc_score, f1_score, accuracy_score
 from sklearn.inspection import partial_dependence
+from sklearn.decomposition import PCA
 from ucimlrepo import fetch_ucirepo
 from sklearn.impute import SimpleImputer
 
@@ -71,6 +72,7 @@ class BeespectorContext:
         self.x1_feature: str = ""
         self.x2_feature: str = ""
         self.preprocessor: Optional[Any] = None
+        self.pca_pipeline: Optional[Any] = None
         self.is_initialized: bool = False
 
 context = BeespectorContext()
@@ -203,6 +205,22 @@ def create_preprocessor(cat_feats: List[str], num_feats: List[str], dataset_name
         ],
         remainder='passthrough'
     )
+
+def build_pca_pipeline(X_train: pd.DataFrame, dataset_name: str) -> Pipeline:
+    """Fit a preprocessor + 2-component PCA to project datapoints into 2-D.
+
+    Used by the Datapoint Editor scatter plots, where both axes are PCA
+    components rather than raw features.
+    """
+    categorical, numerical = get_feature_types(X_train)
+    preprocessor = create_preprocessor(categorical, numerical, dataset_name)
+    pipeline = Pipeline([
+        ('preprocessor', preprocessor),
+        ('pca', PCA(n_components=2, random_state=42)),
+    ])
+    pipeline.fit(X_train)
+    logger.info("Fitted 2-D PCA projection for datapoint visualization.")
+    return pipeline
 
 def train_model(X_train: pd.DataFrame, y_train: pd.Series, classifier_type: str, params: Dict[str, Any], preprocessor: Any, sample_weight: Optional[np.ndarray] = None) -> Pipeline:
     clf_map = {
@@ -566,10 +584,13 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
             
             context.is_initialized = True
         
+        # Project the feature space into 2-D with PCA for the Datapoint Editor
+        context.pca_pipeline = build_pca_pipeline(context.X_train, context.dataset_name)
+
         return {
-            "status": "success", 
-            "message": "Context initialized", 
-            "dataset": context.dataset_name, 
+            "status": "success",
+            "message": "Context initialized",
+            "dataset": context.dataset_name,
             "base_classifier": request.base_classifier, 
             "mitigation_method": request.mitigation_method, 
             "n_samples": len(df)
@@ -581,9 +602,11 @@ async def initialize_context_endpoint(request: InitializeContextRequest):
 
 @app.get("/api/datapoints", response_model=Dict[str, List[InitialDataPoint]])
 async def get_all_datapoints():
-    if not context.is_initialized: 
+    if not context.is_initialized:
         raise HTTPException(status_code=400, detail="Context not initialized.")
-    
+    if context.pca_pipeline is None:
+        raise HTTPException(status_code=400, detail="PCA projection not available.")
+
     #Use stratified sampling to ensure balanced visualization
     sample_size = min(100, len(context.X_test))
     
@@ -615,14 +638,15 @@ async def get_all_datapoints():
     logger.info(f"Base model predictions: {np.bincount(base_labels)}")
     logger.info(f"Mitigated model predictions: {np.bincount(mit_labels)}")
     
+    # Project the sampled points into 2-D PCA space for the scatter plots
+    pca_coords = context.pca_pipeline.transform(X_sample)
+
     datapoints = []
     for i, (idx, row) in enumerate(X_sample.iterrows()):
-        x1_val = row.get(context.x1_feature)
-        x2_val = row.get(context.x2_feature)
         datapoints.append(InitialDataPoint(
             id=int(idx),
-            x1=float(x1_val) if x1_val is not None else 0.0,
-            x2=float(x2_val) if x2_val is not None else 0.0,
+            x1=float(pca_coords[i, 0]),
+            x2=float(pca_coords[i, 1]),
             true_label=int(y_sample.loc[idx]),
             features={k: (None if pd.isna(v) else v) for k, v in row.to_dict().items()},
             pred_label=int(base_labels[i]),
@@ -650,9 +674,11 @@ async def get_context_info():
 
 @app.put("/api/datapoints/{point_id}/evaluate", response_model=EvaluatedPointData)
 async def evaluate_modified_point(point_id: int, payload: Dict[str, Any]):
-    if not context.is_initialized: 
+    if not context.is_initialized:
         raise HTTPException(status_code=400, detail="Context not initialized.")
-    
+    if context.pca_pipeline is None:
+        raise HTTPException(status_code=400, detail="PCA projection not available.")
+
     features = payload.get('features', {})
     feature_data = {}
     for col in context.feature_columns:
@@ -665,10 +691,12 @@ async def evaluate_modified_point(point_id: int, payload: Dict[str, Any]):
     
     true_label = int(context.dataset_df.loc[point_id, 'target']) if point_id in context.dataset_df.index else 0
     
+    pca_coords = context.pca_pipeline.transform(X_point)
+
     return EvaluatedPointData(
         id=point_id,
-        x1=float(np.nan_to_num(X_point.iloc[0].get(context.x1_feature))),
-        x2=float(np.nan_to_num(X_point.iloc[0].get(context.x2_feature))),
+        x1=float(pca_coords[0, 0]),
+        x2=float(pca_coords[0, 1]),
         features=X_point.iloc[0].to_dict(),
         true_label=true_label,
         base_model_prediction={"pred_label": int(base_labels[0]), "pred_prob": float(base_probs[0])},
