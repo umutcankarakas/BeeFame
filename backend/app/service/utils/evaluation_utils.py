@@ -8,6 +8,31 @@ import pandas as pd
 from themis_ml.preprocessing.relabelling import Relabeller
 
 
+class _Float64ProbaEstimator:
+    """Thin wrapper that forces predict_proba/decision_function output to float64.
+
+    XGBClassifier returns float32 probabilities; fairlearn's ThresholdOptimizer
+    builds a float32 pandas Series from them and then fails on pandas>=2.2 when
+    assigning float64 interpolated values into it. Casting to float64 avoids the
+    lossy-upcast error without altering predictions.
+    """
+
+    def __init__(self, estimator):
+        self.estimator = estimator
+
+    def predict(self, X):
+        return self.estimator.predict(X)
+
+    def predict_proba(self, X):
+        return np.asarray(self.estimator.predict_proba(X), dtype=np.float64)
+
+    def decision_function(self, X):
+        return np.asarray(self.estimator.decision_function(X), dtype=np.float64)
+
+    def __getattr__(self, name):
+        return getattr(self.estimator, name)
+
+
 def run_label_flipping(X_train, y_train, s_train):
     """Flip labels to equalise positive rates across groups (Kamiran & Calders 2012)."""
     X = X_train.copy()
@@ -220,7 +245,7 @@ def run_threshold_optimizer_dp(model, X_train_scaled, y_train, s_train, X_test_s
     model.fit(X_train_scaled, y_train)
 
     postprocessor = ThresholdOptimizer(
-        estimator=model,
+        estimator=_Float64ProbaEstimator(model),
         constraints="demographic_parity",
         prefit=True,
     )
@@ -245,7 +270,7 @@ def run_equalized_odds(model, X_train_scaled, y_train, s_train, X_test_scaled, s
     model.fit(X_train_scaled, y_train)
 
     postprocessor = ThresholdOptimizer(
-        estimator=model,
+        estimator=_Float64ProbaEstimator(model),
         constraints="equalized_odds",
         prefit=True,
     )
