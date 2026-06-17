@@ -199,12 +199,6 @@ def run_reject_option(model, X_train_scaled, y_train, s_train, X_test_scaled, s_
     y_pred[uncertain & (s == privileged_val)] = 0
     return y_pred
 
-    uncertain = (proba >= 0.5 - theta) & (proba <= 0.5 + theta)
-    y_pred[uncertain & (s == unprivileged_val)] = 1
-    y_pred[uncertain & (s == privileged_val)]   = 0
-
-    return y_pred
-
 
 def run_threshold_optimizer_dp(model, X_train_scaled, y_train, s_train, X_test_scaled, s_test, unprivileged_val=None):
     """

@@ -152,6 +152,7 @@ def calculate_per_group_metrics(
     group_weighted_scores: Dict[str, float] = {}
     group_supports: Dict[str, float] = {}
     group_sizes: Dict[str, int] = {}
+    rng = np.random.default_rng(42)
 
     for group in sg_arr.unique():
         mask = (sg_arr == group).values
@@ -231,8 +232,17 @@ def calculate_per_group_metrics(
                 except Exception:
                     pass
 
-            if bpsn_auc is not None and bnsp_auc is not None:
-                pinned_auc = (bpsn_auc + bnsp_auc) / 2
+            # Borkan et al. Pinned AUC: subgroup ∪ equal-sized random background sample
+            bg_idx = np.where(~mask)[0]
+            if len(bg_idx) >= 1:
+                pin_bg = rng.choice(bg_idx, size=min(n_g, len(bg_idx)), replace=False)
+                pin_mask = mask.copy()
+                pin_mask[pin_bg] = True
+                if len(np.unique(y_true_arr[pin_mask])) == 2:
+                    try:
+                        pinned_auc = float(roc_auc_score(y_true_arr[pin_mask], y_prob_arr[pin_mask]))
+                    except Exception:
+                        pass
 
         sg_accuracy = float(accuracy_score(sg_true, sg_pred)) if len(sg_true) > 0 else None
 
