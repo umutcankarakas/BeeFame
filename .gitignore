@@ -28,3 +28,7 @@ frontend/.next/
 # Models (large binary files)
 beespector/model_cache/
 beespector/models/
+
+# Tests
+_test_results/
+backend/app/run_all_experiments.py
