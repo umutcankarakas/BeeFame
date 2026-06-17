@@ -565,6 +565,8 @@ const Page: NextPage = () => {
 
   const [showSubgroupWarning, setShowSubgroupWarning] = useState(false);
 
+  const [selectedDeepDiveIndex, setSelectedDeepDiveIndex] = useState<number | null>(null);
+
   const router = useRouter();
   const { setSelectedDatasets: setCtxDatasets, setSelectedClassifiers: setCtxClassifiers, setSelectedMitigations: setCtxMitigations, setAnalysisData: setCtxAnalysis, setClassifierParams: setCtxParams } = useBeeFame();
 
