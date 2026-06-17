@@ -149,7 +149,6 @@ function DatapointEditor() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [axisLabels, setAxisLabels] = useState({ x1: 'X1', x2: 'X2' });
   const [contextInfo, setContextInfo] = useState<any>(null);
   const [categoricalOptions, setCategoricalOptions] = useState<Record<string, string[]>>({});
 
@@ -169,10 +168,6 @@ function DatapointEditor() {
       const contextRes = await beespectorApi.get('/context_info');
       const contextData = contextRes.data;
       setContextInfo(contextData);
-      setAxisLabels({
-        x1: formatFeatureName(contextData.x1_feature),
-        x2: formatFeatureName(contextData.x2_feature),
-      });
       const res = await beespectorApi.get('/datapoints');
       const initialData: InitialDataPoint[] = res.data.data;
       const displayData = initialData.map(transformToDisplayDataPoint);
@@ -216,10 +211,6 @@ function DatapointEditor() {
       if (!prev) return null;
       const updatedFeatures = { ...prev.features, [featureKey]: newValue };
       const updatedPoint = { ...prev, features: updatedFeatures };
-      if (contextInfo && featureKey === contextInfo.x1_feature)
-        updatedPoint.x1 = typeof newValue === 'number' ? newValue : parseFloat(newValue);
-      if (contextInfo && featureKey === contextInfo.x2_feature)
-        updatedPoint.x2 = typeof newValue === 'number' ? newValue : parseFloat(newValue);
       debouncedSetSelectedPoint(updatedPoint);
       return updatedPoint;
     });
@@ -417,8 +408,8 @@ function DatapointEditor() {
                     customShape={(props) =>
                       shapeFunc(props, highlightedPointId, selectedPoint?.id ?? null)
                     }
-                    xAxisLabel={axisLabels.x1}
-                    yAxisLabel={axisLabels.x2}
+                    xAxisLabel="PC1"
+                    yAxisLabel="PC2"
                     positiveColor={positiveColor}
                     negativeColor={negativeColor}
                   />

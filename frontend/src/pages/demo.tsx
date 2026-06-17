@@ -603,6 +603,9 @@ const Page: NextPage = () => {
     ? selectedSubgroupPairs.map((p) => ({ col1: p.col1, col2: p.col2, col3: p.col3 ?? null, label: p.label }))
     : null;
 
+  const selectedDeepDiveSection =
+    selectedDeepDiveIndex !== null ? analysisData[selectedDeepDiveIndex] : null;
+
   const handleNext = async () => {
     if (activeStep === 0 && selectedDatasets.length > 0 && selectedClassifiers.length > 0) {
       setActiveStep((s) => s + 1); setAnalysisLoading(true); setAnalysisError(null);
